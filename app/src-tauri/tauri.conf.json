@@ -121,7 +121,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDY2RUU0OTdFODgyRDc0Q0IKUldUTGRDMklma251Wm82Z3NkUEtFcFFiQURoOEJDT3Q2N3NQZE4rQ2s4UXZyMnRyOVlxRGpmdHMK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEY5MDVGNjYyNThCOTcyM0YKUldRL2NybFlZdllGK2ZKUHE1YVNqMzBJUFo2L1BLTEUvU2QrUEErRjh0SUFmSVVjZ3pDNWxHN1YK",
       "endpoints": [
         "https://github.com/FortoGraphy/prism-download-manager/releases/latest/download/latest.json"
       ],
