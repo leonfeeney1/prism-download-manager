@@ -58,6 +58,7 @@ export const actions = {
   },
 
   open: (id: string) => void attempt(api.openItem(id), t("Could not open the file")),
+  extract: (id: string) => void attempt(api.extractItem(id), t("Could not extract the archive")),
   reveal: (id: string) => void attempt(api.revealItem(id), t("Could not open the folder")),
   details: (id: string) => void attempt(api.openDetails(id), t("Could not open details")),
   redownload: (id: string) => void attempt(api.redownload(id), t("Could not restart the download")),

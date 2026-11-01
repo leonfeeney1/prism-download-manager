@@ -155,6 +155,20 @@ pub struct DownloadItem {
     pub position: i64,
     pub mirrors: Vec<String>,
     pub grabber_project: Option<String>,
+    /// Folder a finished archive was extracted into (auto-extract or the
+    /// manual Extract action); `None` when never extracted.
+    pub extracted_dir: Option<PathBuf>,
+    /// Why the last extraction attempt failed; cleared on success. The item
+    /// itself stays Completed either way, and the archive is never deleted.
+    pub extract_error: Option<String>,
+    /// Why a video finished without translated subtitles when translation
+    /// was asked for (no manual subtitle and no platform translation in
+    /// the requested languages). Cleared when a run finds subtitles.
+    /// The video itself stays Completed either way.
+    pub subtitle_note: Option<String>,
+    /// Offered on the LAN while LAN sharing is on. Only Completed items are
+    /// ever served, and only while this flag is set.
+    pub lan_shared: bool,
     /// Serialized `prism_engine::DownloadRequest` (or video/torrent job spec).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub request: Option<serde_json::Value>,

@@ -58,7 +58,22 @@ export interface DownloadItem {
   position: number;
   mirrors: string[];
   grabberProject?: string | null;
+  /** Folder a finished archive was extracted into; null when never extracted. */
+  extractedDir?: string | null;
+  /** Why the last extraction attempt failed; null when none or on success. */
+  extractError?: string | null;
+  subtitleNote?: string | null;
+  /** Offered on the LAN while LAN sharing is on (completed items only). */
+  lanShared?: boolean;
   media?: MediaInfo | null;
+}
+
+export interface LanStatus {
+  enabled: boolean;
+  running: boolean;
+  address?: string | null;
+  port: number;
+  sharedCount: number;
 }
 
 export interface Progress {
@@ -82,11 +97,20 @@ export interface SegmentInfo {
   state: string;
 }
 
+export interface SourceStatus {
+  url: string;
+  primary: boolean;
+  validated: boolean;
+  benched: boolean;
+  requests: number;
+}
+
 export interface ItemDetails {
   item: DownloadItem;
   segments: SegmentInfo[];
   progress?: Progress | null;
   speedHistory: number[];
+  sources: SourceStatus[];
 }
 
 export interface Category {
@@ -217,6 +241,11 @@ export interface Settings {
     speedLimiterEnabled: boolean;
     verifyChecksums: boolean;
     autoStart: boolean;
+    autoExtract: boolean;
+  };
+  lan: {
+    enabled: boolean;
+    port: number;
   };
   connection: {
     userAgent: string;
@@ -261,6 +290,7 @@ export interface Settings {
     audioFormat: string;
     embedSubtitles: boolean;
     subtitleLangs: string;
+    translateSubtitles: boolean;
     embedThumbnail: boolean;
     embedMetadata: boolean;
     embedChapters: boolean;
@@ -270,15 +300,6 @@ export interface Settings {
     fileTemplate: string;
     /** Start playlist videos' file names with their position ("01 - Title"). */
     numberPlaylistVideos: boolean;
-  };
-  /** Models from Hugging Face. */
-  huggingFace: {
-    /** "" = HF_ENDPOINT if set, else huggingface.co; or a mirror's address. */
-    endpoint: string;
-    /** For gated and private models ("" = the one the Hugging Face tools saved, if any). */
-    token: string;
-    /** "" = Models in the download folder. */
-    folder: string;
   };
   shortcuts: Record<string, string>;
   onboardingDone: boolean;

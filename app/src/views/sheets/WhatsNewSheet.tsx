@@ -2,7 +2,6 @@ import { useEffect } from "react";
 import { BrandTile } from "../../components/LogoMark";
 import { Icon, type IconName } from "../../design/icons";
 import { patchSettings } from "../../lib/actions";
-import { api } from "../../lib/api";
 import { t, tk } from "../../lib/i18n";
 import { openUrl, REPO_URL } from "../../lib/links";
 import { openTools } from "../../lib/tools";
@@ -11,7 +10,7 @@ import { useUi } from "../../lib/ui";
 import { versionNewer } from "../../lib/version";
 import { BrowserConnect, useExtensionStatus } from "../BrowserConnect";
 
-type Change = { icon: IconName; title: string; body: string; credit?: string; action?: "sounds" | "language" | "appearance" | "model" | "tools" };
+type Change = { icon: IconName; title: string; body: string; credit?: string; action?: "sounds" | "language" | "appearance" | "tools" };
 
 /**
  * What this version brings (shown once after an update, and from About Prism), then what the
@@ -142,11 +141,6 @@ function ChangeList({ changes }: { changes: Change[] }) {
               )}
               {c.action === "appearance" && (
                 <button type="button" className="linkbtn" onClick={() => openSheet({ kind: "settings", section: "appearance" })}>
-                  {t("Try it")}
-                </button>
-              )}
-              {c.action === "model" && (
-                <button type="button" className="linkbtn" onClick={() => void api.openWindow("model")}>
                   {t("Try it")}
                 </button>
               )}

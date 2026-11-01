@@ -23,6 +23,9 @@ use crate::speed::SpeedMeter;
 pub(crate) enum Command {
     SetConnections(u8),
     ChangeUrl(Url, oneshot::Sender<Result<(), EngineError>>),
+    /// Validate and add a mirror to a running download (same-file guard applies; the
+    /// source joins the rotation for new requests only, live streams are untouched).
+    AddSource(Url, oneshot::Sender<Result<(), EngineError>>),
 }
 
 /// Why a job is being stopped early.
@@ -74,6 +77,8 @@ pub(crate) struct JobShared {
     stop_reason: Mutex<Option<StopReason>>,
     pub meta: Mutex<JobMeta>,
     source: Mutex<Option<ProgressSource>>,
+    /// Live source list of an HTTP job (set once its context exists); `None` for other jobs.
+    sources: Mutex<Option<Arc<crate::http::Sources>>>,
     final_state: Mutex<Option<ResumeState>>,
     result: watch::Sender<Option<Result<Completed, EngineError>>>,
 }
@@ -114,6 +119,7 @@ impl JobShared {
                 meter: SpeedMeter::default(),
             }),
             source: Mutex::new(None),
+            sources: Mutex::new(None),
             final_state: Mutex::new(None),
             result,
         });
@@ -142,6 +148,10 @@ impl JobShared {
 
     pub(crate) fn set_source(&self, s: ProgressSource) {
         *self.source.lock().expect("source lock") = Some(s);
+    }
+
+    pub(crate) fn set_sources(&self, s: Arc<crate::http::Sources>) {
+        *self.sources.lock().expect("sources lock") = Some(s);
     }
 
     pub(crate) fn source(&self) -> Option<ProgressSource> {
@@ -267,6 +277,13 @@ impl JobShared {
             final_url: m.final_url.clone(),
             elapsed: self.started.elapsed(),
             segments,
+            sources: self
+                .sources
+                .lock()
+                .expect("sources lock")
+                .as_ref()
+                .map(|s| s.snapshot())
+                .unwrap_or_default(),
         }
     }
 
@@ -348,6 +365,20 @@ impl DownloadHandle {
     /// Changes the number of connections live (capped by the engine).
     pub fn set_connections(&self, n: u8) {
         let _ = self.shared.cmd_tx.send(Command::SetConnections(n));
+    }
+
+    /// Validates a new source for a running download (same size, range support) and adds
+    /// it to the rotation for new requests. Fails for jobs without a running HTTP
+    /// transfer, and for a source that is already listed.
+    pub async fn add_source(&self, url: Url) -> Result<(), EngineError> {
+        let (tx, rx) = oneshot::channel();
+        self.shared
+            .cmd_tx
+            .send(Command::AddSource(url, tx))
+            .map_err(|_| EngineError::internal("the download is not running"))?;
+        rx.await.map_err(|_| {
+            EngineError::internal("the download stopped before the source could be added")
+        })?
     }
 
     /// Changes the per-download speed limit live (bytes/s, 0 = unlimited).

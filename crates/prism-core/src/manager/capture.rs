@@ -292,6 +292,10 @@ impl Core {
             position: 0,
             mirrors: n.mirrors.clone(),
             grabber_project: n.grabber_project.clone(),
+            extracted_dir: None,
+            extract_error: None,
+            subtitle_note: None,
+            lan_shared: false,
             request,
             resume: None,
             media: n.media.clone(),
@@ -342,35 +346,11 @@ impl Core {
     /// server again.
     fn capture_probed(
         &self,
-        mut n: NewItem,
+        n: NewItem,
         source: CaptureSource,
-        mut probed: Option<std::result::Result<jobs::ProbeResult, jobs::ProbeFailure>>,
+        probed: Option<std::result::Result<jobs::ProbeResult, jobs::ProbeFailure>>,
     ) -> CaptureInfo {
         let _rt = crate::rt::enter();
-        // A link to a model on Hugging Face opens the model window, where its files are picked
-        // (#29); a link to a file's page there downloads the file instead of the page.
-        if n.kind.is_none() && is_get(&n) {
-            let server = crate::huggingface::endpoint(&self.settings().hugging_face);
-            match crate::huggingface::parse(&n.url, &server) {
-                Some(crate::huggingface::Link::Repo(_)) if n.url.contains("://") => {
-                    let url = n.url.clone();
-                    self.emit(CoreEvent::OpenModel {
-                        source: url.clone(),
-                    });
-                    return CaptureInfo {
-                        id: new_id(),
-                        source,
-                        url,
-                        ..Default::default()
-                    };
-                }
-                Some(crate::huggingface::Link::FilePage(file)) => {
-                    n.url = file;
-                    probed = None;
-                }
-                _ => {}
-            }
-        }
         // A typed or copied link to a video page (YouTube, Vimeo, ...) gets the quality
         // picker instead of the plain file dialog, like IDM's video panel.
         if source != CaptureSource::Browser && is_video_page(&n.url) {
@@ -1257,18 +1237,6 @@ impl Core {
                     ..Default::default()
                 };
                 let settings = self.settings();
-                // "Download with Prism" on a link to a model on Hugging Face: the model window.
-                if is_get(&n)
-                    && let Some(crate::huggingface::Link::Repo(_)) = crate::huggingface::parse(
-                        &n.url,
-                        &crate::huggingface::endpoint(&settings.hugging_face),
-                    )
-                {
-                    self.emit(CoreEvent::OpenModel {
-                        source: n.url.clone(),
-                    });
-                    return serde_json::json!({"ok": true, "accepted": true});
-                }
                 // Sites behind a bot check (Cloudflare's "Just a moment...", e.g. softpedia.com)
                 // answer Prism with a page only the browser gets past. Try the link first, briefly
                 // so the browser's download isn't held up, and leave such downloads to the browser.
@@ -1828,6 +1796,27 @@ impl IpcHandler for Core {
     fn handle(&self, message: serde_json::Value) -> BoxFuture<serde_json::Value> {
         let core = self.clone();
         Box::pin(async move { core.handle_message(message).await })
+    }
+}
+
+/// What the LAN server may serve: only completed, user-shared, untrashed
+/// items, resolved fresh on every request. In-progress files, settings and
+/// the database never pass through here.
+impl crate::lan::LanSource for Core {
+    fn shared_files(&self) -> Vec<crate::lan::SharedFile> {
+        self.0
+            .state
+            .lock()
+            .items
+            .values()
+            .filter(|i| i.lan_shared && i.status == Status::Completed && !i.trashed)
+            .map(|i| crate::lan::SharedFile {
+                id: i.id.clone(),
+                name: i.file_name.clone(),
+                path: i.path(),
+                size: i.size.unwrap_or(0),
+            })
+            .collect()
     }
 }
 

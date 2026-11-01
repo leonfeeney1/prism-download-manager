@@ -15,7 +15,6 @@ export type Route =
   | { name: "details"; id: string }
   | { name: "progress"; id: string }
   | { name: "torrent"; source: string }
-  | { name: "model"; source: string }
   | { name: "tools"; request: ToolsRequest };
 
 const WITH_ID = ["capture", "batch", "video", "complete", "details", "progress"] as const;
@@ -31,8 +30,6 @@ export function parseRoute(hash: string): Route {
       return { name: kind };
     case "torrent":
       return arg ? { name: "torrent", source: hexDecode(arg) } : { name: "main" };
-    case "model":
-      return { name: "model", source: arg ? hexDecode(arg) : "" };
     case "tools":
       return { name: "tools", request: toolsRequest(rest[0], rest[1]) };
     default:

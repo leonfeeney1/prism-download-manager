@@ -53,7 +53,7 @@ impl RemoteFile {
             ..Default::default()
         });
         Ok(RemoteFile {
-            fetcher: HttpFetcher::new(ctx.clone(), 0),
+            fetcher: HttpFetcher::new(ctx.clone()),
             ctx,
         })
     }
@@ -67,7 +67,7 @@ impl RemoteFile {
     /// one learned, and going straight to where a redirect led it.
     pub fn new_reader(&self) -> RemoteFile {
         RemoteFile {
-            fetcher: HttpFetcher::new(self.ctx.clone(), 0),
+            fetcher: HttpFetcher::new(self.ctx.clone()),
             ctx: self.ctx.clone(),
         }
     }

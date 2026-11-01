@@ -24,6 +24,18 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio_util::sync::CancellationToken;
 
+/// One source of a download, for the details window (live state while running,
+/// configured list while paused).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SourceStatus {
+    pub url: String,
+    pub primary: bool,
+    pub validated: bool,
+    pub benched: bool,
+    pub requests: u64,
+}
+
 /// Details window payload.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -32,6 +44,7 @@ pub struct ItemDetails {
     pub segments: Vec<SegmentInfo>,
     pub progress: Option<Progress>,
     pub speed_history: Vec<u64>,
+    pub sources: Vec<SourceStatus>,
 }
 
 pub(crate) struct JobOutcome {
@@ -171,6 +184,37 @@ impl Job {
                     tracing::warn!("change url: {}", e.user_message());
                 }
             });
+        }
+    }
+
+    /// Live source list of a running engine job (empty for other job kinds).
+    pub fn sources(&self) -> Vec<SourceStatus> {
+        match self {
+            Job::Engine(j) => j
+                .handle
+                .snapshot()
+                .sources
+                .iter()
+                .map(|s| SourceStatus {
+                    url: s.url.to_string(),
+                    primary: s.primary,
+                    validated: s.validated,
+                    benched: s.benched,
+                    requests: s.requests,
+                })
+                .collect(),
+            _ => Vec::new(),
+        }
+    }
+
+    /// Validates and adds a source to a running engine download. Only engine jobs
+    /// support live sources; anything else reports unsupported.
+    pub async fn add_source(&self, url: Url) -> Result<(), EngineError> {
+        match self {
+            Job::Engine(j) => j.handle.add_source(url).await,
+            _ => Err(EngineError::Unsupported {
+                message: "adding a source to this download".into(),
+            }),
         }
     }
 
@@ -468,7 +512,6 @@ pub(crate) fn capture_request(n: &NewItem, settings: &Settings) -> Option<Downlo
     let mut req: DownloadRequest = serde_json::from_value(request_json(n, settings)).ok()?;
     req.proxy = Some(proxy_config(settings));
     req.http = http_preference(settings);
-    crate::huggingface::authorize(&mut req, settings);
     Some(req)
 }
 
@@ -555,8 +598,6 @@ fn build_request(item: &DownloadItem, settings: &Settings) -> Result<DownloadReq
     if let Some(c) = item.checksum.as_deref().and_then(parse_checksum) {
         req.checksum = Some(c);
     }
-    // Gated and private Hugging Face models: the token is added now, not stored with the item.
-    crate::huggingface::authorize(&mut req, settings);
     if req.user_agent.is_none() && !settings.connection.user_agent.is_empty() {
         req.user_agent = Some(settings.connection.user_agent.clone());
     }
@@ -906,6 +947,29 @@ impl VideoJob {
             .and_then(|v| serde_json::from_value(v).ok());
         let choice = pick_choice(&info.choices, stored_choice.as_ref(), &settings)
             .ok_or_else(|| anyhow!("No downloadable format (DRM-protected or unsupported)"))?;
+
+        // Translation asked for, subtitles requested, whole video (parts
+        // get no subtitles by design), video not audio-only: say plainly
+        // on the item when the probe lists no manual subtitle and no
+        // platform translation in the requested languages, instead of
+        // finishing silently without subtitles. Cleared when a run finds
+        // subtitles. Applies to both the accelerated plan and the yt-dlp
+        // fallback, since both work from the same probe data.
+        if opts.translate_subtitles
+            && (opts.embed_subtitles || opts.write_subtitles)
+            && opts.section.is_none()
+            && choice.kind != ChoiceKind::Audio
+        {
+            let missing =
+                prism_video::plan::missing_translated_langs(&info.subtitles, &opts.sub_langs);
+            let note = (!missing.is_empty()).then(|| {
+                format!(
+                    "No subtitles or platform translation found for: {}",
+                    missing.join(", ")
+                )
+            });
+            core.with_item(&item.id, |i| i.subtitle_note = note);
+        }
 
         let plan = if settings.video.accelerate {
             video.plan(&info, &choice, &opts, &ctx)
@@ -1324,6 +1388,7 @@ fn output_options(
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty())
             .collect(),
+        translate_subtitles: v.translate_subtitles,
         embed_thumbnail: v.embed_thumbnail,
         embed_metadata: v.embed_metadata,
         embed_chapters: v.embed_chapters,

@@ -4,9 +4,10 @@ use std::path::PathBuf;
 
 use common::video;
 use prism_video::plan::{
-    accelerated_blocker, cookie_header_from_ytdlp, format_selector, lang_matches, plan, plan_ytdlp,
-    select_subtitles,
+    accelerated_blocker, cookie_header_from_ytdlp, format_selector, lang_matches,
+    missing_translated_langs, plan, plan_ytdlp, select_subtitles, select_translated_subtitles,
 };
+use prism_video::{SubtitleFormat, SubtitleTrack};
 use prism_video::probe::{ToolPaths, context_args, global_args, netscape_cookies, probe_args};
 use prism_video::template::{render_template, sanitize_component};
 use prism_video::{
@@ -217,6 +218,108 @@ fn ytdlp_args_video() {
     assert!(a.contains("--no-mtime --windows-filenames --no-playlist"));
     assert!(a.ends_with("-P out -o %(title)s [%(id)s].%(ext)s"));
     assert_eq!(job.url, "https://www.youtube.com/watch?v=HDRtest0001");
+}
+
+fn track(lang: &str, auto: bool) -> SubtitleTrack {
+    SubtitleTrack {
+        lang: lang.into(),
+        name: None,
+        auto,
+        formats: vec![SubtitleFormat {
+            ext: "vtt".into(),
+            url: format!("https://example.invalid/{lang}.vtt"),
+            protocol: None,
+        }],
+    }
+}
+
+#[test]
+fn translated_subtitles_prefer_manual_then_platform_translation() {
+    // Manual subtitles beat a machine translation; a platform auto track
+    // in the requested language counts as its translation.
+    let tracks = vec![
+        track("en", false),
+        track("en", true),
+        track("de", true),
+    ];
+    let picked: Vec<&str> = select_translated_subtitles(&tracks, &["en".into(), "de".into()])
+        .iter()
+        .map(|t| t.lang.as_str())
+        .collect();
+    assert_eq!(picked, ["en", "de"]);
+    assert!(picked
+        .iter()
+        .all(|l| tracks.iter().find(|t| &t.lang == l).unwrap().auto == (*l == "de")));
+    assert!(missing_translated_langs(&tracks, &["en".into(), "de".into()]).is_empty());
+}
+
+#[test]
+fn translated_subtitles_never_use_the_untranslated_orig_track() {
+    // Only the untranslated original exists: that is not a translation,
+    // so nothing is picked and the language is reported missing.
+    let tracks = vec![track("de-orig", true)];
+    assert!(select_translated_subtitles(&tracks, &["de".into()]).is_empty());
+    assert_eq!(
+        missing_translated_langs(&tracks, &["de".into()]),
+        vec!["de".to_string()]
+    );
+}
+
+#[test]
+fn translated_subtitles_in_accelerated_plan_and_ytdlp_args() {
+    let v = video("synthetic_hdr.json");
+    let c = v.choices.iter().find(|c| c.height == Some(1080)).unwrap();
+    // Fixture: manual en/cs, auto en/de/de-orig. Translating into German
+    // picks the platform's German auto track; translating into French,
+    // which the fixture has nothing for, picks no subtitle stream.
+    let o = OutputOptions {
+        embed_subtitles: true,
+        sub_langs: vec!["de".into()],
+        translate_subtitles: true,
+        ..opts()
+    };
+    let Plan::Accelerated(p) = plan(&v, c, &o, &RequestContext::default(), None, false, 8) else {
+        panic!()
+    };
+    let names: Vec<&str> = p
+        .streams
+        .iter()
+        .filter(|s| s.role == StreamRole::Subtitle)
+        .map(|s| s.file_name.as_str())
+        .collect();
+    assert_eq!(names, ["HDRtest0001.de.auto.vtt"]);
+    let o = OutputOptions {
+        embed_subtitles: true,
+        sub_langs: vec!["fr".into()],
+        translate_subtitles: true,
+        ..opts()
+    };
+    let Plan::Accelerated(p) = plan(&v, c, &o, &RequestContext::default(), None, false, 8) else {
+        panic!()
+    };
+    assert!(p
+        .streams
+        .iter()
+        .all(|s| s.role != StreamRole::Subtitle));
+    assert_eq!(
+        missing_translated_langs(&v.subtitles, &["fr".into()]),
+        vec!["fr".to_string()]
+    );
+    // yt-dlp fallback: translation forces --write-auto-subs even though
+    // auto_subtitles itself is off, so yt-dlp fetches the platform's
+    // translated tracks for the requested languages.
+    let o = OutputOptions {
+        embed_subtitles: true,
+        sub_langs: vec!["es".into()],
+        translate_subtitles: true,
+        ..opts()
+    };
+    let a = plan_ytdlp(&v, c, &o, &RequestContext::default(), 8, "test".into())
+        .args
+        .join(" ");
+    assert!(a.contains("--sub-langs es"), "{a}");
+    assert!(a.contains("--write-auto-subs"), "{a}");
+    assert!(a.contains("--embed-subs"), "{a}");
 }
 
 #[test]

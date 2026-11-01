@@ -17,7 +17,6 @@ const AddUrlWindow = lazy(() => import("./windows/AddUrlWindow"));
 const BatchWindow = lazy(() => import("./windows/BatchWindow"));
 const VideoWindow = lazy(() => import("./windows/VideoWindow"));
 const TorrentWindow = lazy(() => import("./windows/TorrentWindow"));
-const ModelWindow = lazy(() => import("./windows/ModelWindow"));
 const ToolsWindow = lazy(() => import("./windows/ToolsWindow"));
 const CompleteWindow = lazy(() => import("./windows/CompleteWindow"));
 const DetailsWindow = lazy(() => import("./windows/DetailsWindow"));
@@ -38,8 +37,6 @@ function View({ route }: { route: Route }) {
       return <VideoWindow id={route.id} />;
     case "torrent":
       return <TorrentWindow source={route.source} />;
-    case "model":
-      return <ModelWindow source={route.source} />;
     case "tools":
       return <ToolsWindow request={route.request} />;
     case "complete":

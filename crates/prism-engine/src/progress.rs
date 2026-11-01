@@ -74,6 +74,23 @@ pub struct SegmentView {
     pub status: SegmentStatus,
 }
 
+/// One source of a multi-source download, as seen by the engine right now. `requests` counts
+/// range requests opened from this source; a source that is not `validated` (its size/range
+/// support was never confirmed to match the primary) is never used.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SourceInfo {
+    /// The source URL (before any redirect target is applied).
+    pub url: Url,
+    /// `true` for the download's primary address.
+    pub primary: bool,
+    /// Size and range support confirmed to match the primary.
+    pub validated: bool,
+    /// Temporarily out of rotation after failures.
+    pub benched: bool,
+    /// Range requests opened from this source.
+    pub requests: u64,
+}
+
 /// A point-in-time view of a download, cheap to take (poll it, e.g. 4×/s).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ProgressSnapshot {
@@ -103,6 +120,9 @@ pub struct ProgressSnapshot {
     pub elapsed: Duration,
     /// Segments, sorted by start.
     pub segments: Vec<SegmentView>,
+    /// Sources of this download (primary first), with their live state. Empty for jobs
+    /// without sources (media jobs, single-connection fallbacks before the probe).
+    pub sources: Vec<SourceInfo>,
 }
 
 /// Metadata learned from the first response.

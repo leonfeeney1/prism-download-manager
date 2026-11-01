@@ -614,11 +614,18 @@ pub(crate) async fn run(
     let r = tokio::select! {
         r = run_inner(&engine, &job, &req, resume, extra_limiters, run_started) => r,
         // Media jobs accept no live commands except the speed limit (handled by the limiter);
-        // reject URL changes explicitly.
+        // reject URL changes and source additions explicitly (every command gets a reply,
+        // so no caller waits forever).
         _ = async {
             while let Some(cmd) = cmd_rx.recv().await {
-                if let Command::ChangeUrl(_, reply) = cmd {
-                    let _ = reply.send(Err(EngineError::Unsupported { message: "changing the address of a stream".into() }));
+                match cmd {
+                    Command::ChangeUrl(_, reply) => {
+                        let _ = reply.send(Err(EngineError::Unsupported { message: "changing the address of a stream".into() }));
+                    }
+                    Command::AddSource(_, reply) => {
+                        let _ = reply.send(Err(EngineError::Unsupported { message: "adding a source to a stream".into() }));
+                    }
+                    _ => {}
                 }
             }
             std::future::pending::<()>().await

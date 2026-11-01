@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { RateField, Switch } from "../components/Controls";
+import { RateField, Switch, TextField } from "../components/Controls";
 import { IconButton } from "../components/IconButton";
 import { useItemDetails } from "../components/useItemDetails";
 import { ConnectionLanes, FileMap, FileTile, ProgressBar, SpeedChart } from "../components/Visuals";
@@ -22,6 +22,7 @@ export default function DetailsWindow({ id, simple }: { id: string; simple?: boo
   const [pinned, setPinned] = useState(false);
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [limitDraft, setLimitDraft] = useState<number | null>(null);
+  const [newSource, setNewSource] = useState("");
 
   if (!item)
     return (
@@ -135,12 +136,80 @@ export default function DetailsWindow({ id, simple }: { id: string; simple?: boo
             <span>{item.error}</span>
           </div>
         )}
+        {status === "completed" && item.extractedDir && (
+          <div className="banner">
+            <Icon name="folder-open" size={16} />
+            <span>
+              {t("Extracted folder")}: <span className="selectable">{item.extractedDir}</span>
+            </span>
+            <button
+              type="button"
+              className="btn"
+              onClick={() => void attempt(api.revealPath(item.extractedDir!), t("Could not open the folder"))}
+            >
+              {t("Open")}
+            </button>
+          </div>
+        )}
+        {status === "completed" && item.extractError && (
+          <div className="banner banner--danger">
+            <Icon name="status-error" size={16} />
+            <span>
+              {t("Extraction failed")}: {item.extractError}
+            </span>
+          </div>
+        )}
+        {status === "completed" && item.subtitleNote && (
+          <div className="banner banner--warn">
+            <Icon name="subtitle" size={16} />
+            <span>{item.subtitleNote}</span>
+          </div>
+        )}
       </div>
 
       <div className={`panel${simple ? " panel--single" : ""}`}>
         <div className="panel__conn">
           <div className="ph">{t("Connections")}</div>
           {status === "completed" ? <p className="lanes__empty">{t("Download complete.")}</p> : <ConnectionLanes segments={segments} max={12} unit={unit} />}
+          <div className="ph" style={{ marginTop: 14 }}>
+            {t("Sources")}
+          </div>
+          {(details?.sources ?? []).map((s) => (
+            <div key={s.url} className={`ellipsis selectable${s.benched || !s.validated ? " text-tertiary" : ""}`} title={s.url}>
+              {s.url} <span className="tnum">· {t("{count} requests", { count: s.requests })}</span>
+            </div>
+          ))}
+          {status !== "completed" && (
+            <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+              <TextField
+                value={newSource}
+                onChange={setNewSource}
+                label={t("Add source")}
+                placeholder={t("https://… , ftp://… or magnet:?…")}
+                icon="link"
+                mono
+                onEnter={async () => {
+                  const url = newSource.trim();
+                  if (!url) return;
+                  const done = await attempt(api.addSource(id, url));
+                  if (done) setNewSource("");
+                }}
+              />
+              <button
+                type="button"
+                className="btn"
+                disabled={!newSource.trim()}
+                onClick={async () => {
+                  const url = newSource.trim();
+                  if (!url) return;
+                  const done = await attempt(api.addSource(id, url));
+                  if (done) setNewSource("");
+                }}
+              >
+                {t("Add source")}
+              </button>
+            </div>
+          )}
         </div>
         {!simple && (
           <div className="panel__speed">
@@ -194,6 +263,20 @@ export default function DetailsWindow({ id, simple }: { id: string; simple?: boo
         <button type="button" className="btn" onClick={() => void attempt(api.revealItem(id), t("Could not open the folder"))}>
           <Icon name="folder-open" size={15} /> {t("Folder")}
         </button>
+        {status === "completed" && (
+          <button
+            type="button"
+            className="btn"
+            onClick={() =>
+              void attempt(
+                api.updateItem(id, { lanShared: !item.lanShared }),
+                item.lanShared ? t("Could not stop sharing") : t("Could not share on the LAN"),
+              )
+            }
+          >
+            <Icon name="link" size={15} /> {item.lanShared ? t("Stop sharing") : t("Share on LAN")}
+          </button>
+        )}
         {status === "completed" ? (
           <button type="button" className="btn btn--primary" onClick={() => void attempt(api.openItem(id), t("Could not open the file"))}>
             <Icon name="open-file" size={15} /> {t("Open")}

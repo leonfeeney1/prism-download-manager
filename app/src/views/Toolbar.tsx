@@ -44,7 +44,6 @@ export function Toolbar() {
       <span className="tb-sep" />
       <IconButton icon="grabber" label={t("Site grabber")} onClick={() => ui().openSheet({ kind: "grabber" })} />
       <IconButton icon="batch" label={t("Batch download")} onClick={() => ui().openDialog({ kind: "batch" })} />
-      <IconButton icon="model" label={t("Download a model from Hugging Face")} onClick={() => void attempt(api.openWindow("model"))} />
       <IconButton
         icon="speed-limiter"
         label={limiter ? t("Speed limiter on · {limit}", { limit: `${formatBytes(limit)}/s` }) : t("Speed limiter off")}

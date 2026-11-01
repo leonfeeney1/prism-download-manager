@@ -289,6 +289,91 @@ pub fn select_subtitles<'a>(
     out
 }
 
+/// Whether an automatic-caption track is a usable translation into the
+/// requested language: the track itself must be in that language. The
+/// `<lang>-orig` track is the untranslated original and never counts.
+fn is_translated_auto(track: &SubtitleTrack, pattern: &str) -> bool {
+    track.auto
+        && !track.lang.to_ascii_lowercase().ends_with("-orig")
+        && lang_matches(pattern, &track.lang)
+}
+
+/// Pick subtitle tracks for translation: manual tracks in the requested
+/// language first, then platform automatic captions in that language
+/// (native auto captions or the platform's machine translation — both are
+/// tracks the platform itself offers for the language). Unlike
+/// [`select_subtitles`], there is no fallback to the untranslated
+/// `<lang>-orig` track: that is not a translation.
+pub fn select_translated_subtitles<'a>(
+    tracks: &'a [SubtitleTrack],
+    patterns: &[String],
+) -> Vec<&'a SubtitleTrack> {
+    let mut out: Vec<&SubtitleTrack> = Vec::new();
+    for p in patterns {
+        if p == "all" {
+            for t in tracks.iter().filter(|t| !t.auto) {
+                if !out.iter().any(|o| o.lang == t.lang && o.auto == t.auto) {
+                    out.push(t);
+                }
+            }
+            for t in tracks.iter().filter(|t| {
+                t.auto && !t.lang.to_ascii_lowercase().ends_with("-orig")
+            }) {
+                if !out.iter().any(|o| o.lang == t.lang && o.auto == t.auto) {
+                    out.push(t);
+                }
+            }
+            continue;
+        }
+        let manual: Vec<&SubtitleTrack> = tracks
+            .iter()
+            .filter(|t| !t.auto && lang_matches(p, &t.lang))
+            .collect();
+        let picked = if !manual.is_empty() {
+            manual
+        } else {
+            tracks
+                .iter()
+                .filter(|t| is_translated_auto(t, p))
+                .collect()
+        };
+        for t in picked {
+            if !out.iter().any(|o| o.lang == t.lang && o.auto == t.auto) {
+                out.push(t);
+            }
+        }
+    }
+    out
+}
+
+/// Requested languages (as their base code, e.g. `es` for `es.*`) for which
+/// neither a manual subtitle nor a platform translated subtitle exists.
+/// Empty when translation is not meaningfully requested (no patterns), or
+/// when every requested language is covered. Used to tell the user plainly
+/// that no translation exists instead of silently downloading without one.
+pub fn missing_translated_langs(tracks: &[SubtitleTrack], patterns: &[String]) -> Vec<String> {
+    let mut missing = Vec::new();
+    for p in patterns {
+        if p == "all" {
+            let any = tracks.iter().any(|t| {
+                !t.auto || (t.auto && !t.lang.to_ascii_lowercase().ends_with("-orig"))
+            });
+            if !any {
+                missing.push(p.clone());
+            }
+            continue;
+        }
+        let base = p.trim_end_matches(".*").to_ascii_lowercase();
+        let covered = tracks.iter().any(|t| {
+            (!t.auto && lang_matches(p, &t.lang)) || is_translated_auto(t, p)
+        });
+        if !covered {
+            missing.push(base);
+        }
+    }
+    missing
+}
+
 fn thumb_ext(url: &str) -> String {
     let path = url.split(['?', '#']).next().unwrap_or(url);
     let ext = path.rsplit('.').next().unwrap_or("").to_ascii_lowercase();
@@ -453,9 +538,16 @@ fn plan_accelerated(
         }
     }
 
-    // Subtitles (video outputs only).
+    // Subtitles (video outputs only). Translation picks manual tracks in
+    // the requested language, else the platform's translated subtitles;
+    // everything else keeps the existing manual-then-auto selection.
     if whole && !audio_only && (opts.embed_subtitles || opts.write_subtitles) {
-        for t in select_subtitles(&info.subtitles, &opts.sub_langs, opts.auto_subtitles) {
+        let picked = if opts.translate_subtitles {
+            select_translated_subtitles(&info.subtitles, &opts.sub_langs)
+        } else {
+            select_subtitles(&info.subtitles, &opts.sub_langs, opts.auto_subtitles)
+        };
+        for t in picked {
             let pick = ["vtt", "srt", "ass"].iter().find_map(|e| {
                 t.formats.iter().find(|f| {
                     f.ext == *e
@@ -674,7 +766,11 @@ pub fn plan_ytdlp(
         if opts.write_subtitles {
             a.push("--write-subs".into());
         }
-        if opts.auto_subtitles {
+        // Translated subtitles are automatic captions as far as yt-dlp is
+        // concerned: it fetches the platform's translated tracks for the
+        // requested languages. Without this flag yt-dlp would only look at
+        // manual subtitles and the translation request would do nothing.
+        if opts.auto_subtitles || opts.translate_subtitles {
             a.push("--write-auto-subs".into());
         }
         if opts.embed_subtitles {

@@ -129,6 +129,40 @@ async fn add_download_and_verify_content() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn add_source_to_idle_item_persists_and_is_used_on_start() {
+    let server = TestServer::start(ServerConfig::default()).await.unwrap();
+    let tmp = tempfile::tempdir().unwrap();
+    let core = core_in(tmp.path()).await;
+    let mut rx = core.subscribe();
+    let size = 8 << 20;
+    let url = server.url(&format!("/file/as-primary.bin?size={size}&seed=41"));
+    let mirror = server.url(&format!("/file/as-mirror.bin?size={size}&seed=41"));
+    let items = core
+        .add_items(
+            vec![NewItem {
+                url,
+                ..Default::default()
+            }],
+            StartMode::Later,
+        )
+        .unwrap();
+    let id = items[0].id.clone();
+    let updated = core.add_source(&id, &mirror).await.unwrap();
+    assert_eq!(updated.mirrors, vec![mirror.clone()]);
+    let stored = updated.request.unwrap();
+    let req_mirrors = stored["mirrors"].as_array().unwrap();
+    assert_eq!(req_mirrors.len(), 1);
+    assert_eq!(req_mirrors[0].as_str().unwrap(), mirror);
+    // Duplicates and invalid addresses are refused, and the stored list is unchanged.
+    assert!(core.add_source(&id, &mirror).await.is_err());
+    assert!(core.add_source(&id, "not a url").await.is_err());
+    assert_eq!(core.item(&id).unwrap().mirrors.len(), 1);
+    core.start_items(&[id.clone()]);
+    let path = wait_completed(&mut rx, &id).await;
+    assert_eq!(sha256_file(&path), expected_sha256(41, size));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn capture_dialog_flow_uses_probed_name() {
     let server = TestServer::start(ServerConfig::default()).await.unwrap();
     let tmp = tempfile::tempdir().unwrap();
@@ -1129,335 +1163,146 @@ async fn torrent_links_always_have_a_torrent_source() {
     core.shutdown().await;
 }
 
-type Seen<T> = std::sync::Arc<std::sync::Mutex<Vec<T>>>;
-
-/// A Hugging Face lookalike: the model API, `/resolve/` links that need the token and redirect
-/// to a "CDN" on another server (signed links, ranges), and what each side was sent.
-struct HubSite {
-    hub: String,
-    /// Authorization headers the hub's `/resolve/` links got.
-    hub_auth: Seen<Option<String>>,
-    /// Whether each request the CDN got carried an Authorization header.
-    cdn_auth: Seen<bool>,
-    files: Vec<(String, Vec<u8>)>,
-}
-
-fn ranged(data: &[u8], headers: &axum::http::HeaderMap) -> axum::response::Response {
-    use axum::{http::StatusCode, response::IntoResponse};
-    let total = data.len();
-    let range = headers
-        .get("range")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.strip_prefix("bytes="))
-        .and_then(|v| v.split_once('-'))
-        .map(|(a, b)| {
-            let a: usize = a.parse().unwrap_or(0);
-            let b = b
-                .parse::<usize>()
-                .map(|b| b.min(total - 1))
-                .unwrap_or(total - 1);
-            (a, b)
-        });
-    match range {
-        Some((a, b)) if a <= b && a < total => (
-            StatusCode::PARTIAL_CONTENT,
-            [
-                ("content-range", format!("bytes {a}-{b}/{total}")),
-                ("accept-ranges", "bytes".to_string()),
-                ("content-type", "application/octet-stream".to_string()),
-            ],
-            data[a..=b].to_vec(),
-        )
-            .into_response(),
-        _ => (
-            [
-                ("accept-ranges", "bytes".to_string()),
-                ("content-type", "application/octet-stream".to_string()),
-            ],
-            data.to_vec(),
-        )
-            .into_response(),
-    }
-}
-
-async fn hub_site() -> HubSite {
-    use axum::{
-        Router,
-        extract::Path as AxPath,
-        http::{HeaderMap, StatusCode},
-        response::IntoResponse,
-        routing::get,
-    };
-    let blob = |n: usize, seed: u8| {
-        (0..n)
-            .map(|i| (i as u8).wrapping_mul(31).wrapping_add(seed))
-            .collect::<Vec<u8>>()
-    };
-    let files = vec![
-        (
-            "config.json".to_string(),
-            br#"{"model_type":"llama"}"#.to_vec(),
-        ),
-        ("model-Q4_K_M.gguf".to_string(), blob(3 << 20, 7)),
-        ("model-Q8_0.gguf".to_string(), blob(5 << 20, 9)),
-    ];
-    let by_name: std::sync::Arc<std::collections::HashMap<String, Vec<u8>>> =
-        std::sync::Arc::new(files.iter().cloned().collect());
-
-    // The CDN: ranges, no credentials needed.
-    let cdn_auth: Seen<bool> = Default::default();
-    let cdn_seen = cdn_auth.clone();
-    let cdn = Router::new().route(
-        "/blob/{name}",
-        get(move |AxPath(name): AxPath<String>, headers: HeaderMap| {
-            let files = by_name.clone();
-            let seen = cdn_seen.clone();
-            async move {
-                seen.lock()
-                    .unwrap()
-                    .push(headers.contains_key("authorization"));
-                match files.get(&name) {
-                    Some(data) => ranged(data, &headers),
-                    None => StatusCode::NOT_FOUND.into_response(),
-                }
+/// Wait until an item's post-processing has recorded an extraction result.
+async fn wait_extracted(core: &Core, id: &str) -> DownloadItem {
+    tokio::time::timeout(Duration::from_secs(30), async {
+        loop {
+            let item = core.item(id).unwrap();
+            if item.extracted_dir.is_some() || item.extract_error.is_some() {
+                return item;
             }
-        }),
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    })
+    .await
+    .expect("no extraction result")
+}
+
+fn zip_bytes(files: &[(&str, &str)]) -> Vec<u8> {
+    let mut buf = std::io::Cursor::new(Vec::new());
+    let mut zip = zip::ZipWriter::new(&mut buf);
+    let opts = zip::write::SimpleFileOptions::default();
+    for (name, content) in files {
+        zip.start_file(*name, opts).unwrap();
+        std::io::Write::write_all(&mut zip, content.as_bytes()).unwrap();
+    }
+    zip.finish().unwrap();
+    buf.into_inner()
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn auto_extract_extracts_finished_zip_and_keeps_archive() {
+    let server = TestServer::start(ServerConfig::default()).await.unwrap();
+    server.put_blob(
+        "pack.zip",
+        zip_bytes(&[("hello.txt", "hello"), ("sub/world.txt", "world")]),
+        "application/zip",
     );
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let cdn_url = format!("http://{}", listener.local_addr().unwrap());
-    tokio::spawn(async move { axum::serve(listener, cdn).await.unwrap() });
-
-    // The hub: the model's file list and its /resolve/ links.
-    let siblings: Vec<serde_json::Value> = files
-        .iter()
-        .map(|(name, data)| {
-            if name.ends_with(".gguf") {
-                serde_json::json!({"rfilename": name, "size": data.len(),
-                    "lfs": {"sha256": sha256_hex(data), "size": data.len()}})
-            } else {
-                serde_json::json!({"rfilename": name, "size": data.len()})
-            }
-        })
-        .collect();
-    let info = serde_json::json!({"id": "owner/tiny-GGUF", "sha": "c0ffee", "gated": "auto",
-        "downloads": 12, "likes": 3, "tags": ["gguf"], "siblings": siblings});
-    let hub_auth: Seen<Option<String>> = Default::default();
-    let seen = hub_auth.clone();
-    let hub = Router::new()
-        .route(
-            "/api/models/owner/tiny-GGUF/revision/main",
-            get(move |headers: HeaderMap| {
-                let info = info.clone();
-                async move {
-                    match headers.get("authorization").and_then(|v| v.to_str().ok()) {
-                        Some("Bearer hf_test") => axum::Json(info).into_response(),
-                        Some(_) => (StatusCode::UNAUTHORIZED, "bad token").into_response(),
-                        None => (
-                            StatusCode::UNAUTHORIZED,
-                            [("x-error-code", "GatedRepo")],
-                            "gated",
-                        )
-                            .into_response(),
-                    }
-                }
-            }),
-        )
-        .route(
-            "/owner/tiny-GGUF/resolve/{rev}/{name}",
-            get(
-                move |AxPath((rev, name)): AxPath<(String, String)>, headers: HeaderMap| {
-                    let seen = seen.clone();
-                    let cdn_url = cdn_url.clone();
-                    async move {
-                        let auth = headers
-                            .get("authorization")
-                            .and_then(|v| v.to_str().ok())
-                            .map(str::to_string);
-                        seen.lock().unwrap().push(auth.clone());
-                        if auth.as_deref() != Some("Bearer hf_test") || rev != "c0ffee" {
-                            return (
-                                StatusCode::UNAUTHORIZED,
-                                [("x-error-code", "GatedRepo")],
-                                "",
-                            )
-                                .into_response();
-                        }
-                        (
-                            StatusCode::FOUND,
-                            [(
-                                "location",
-                                format!("{cdn_url}/blob/{name}?Expires=9&Signature=x"),
-                            )],
-                        )
-                            .into_response()
-                    }
-                },
-            ),
-        );
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let hub_url = format!("http://{}", listener.local_addr().unwrap());
-    tokio::spawn(async move { axum::serve(listener, hub).await.unwrap() });
-    HubSite {
-        hub: hub_url,
-        hub_auth,
-        cdn_auth,
-        files,
-    }
-}
-
-/// #29: a gated model from Hugging Face. Without a token Prism says one is needed; with it the
-/// suggested GGUF version goes into the "Hugging Face" queue, which starts, downloads every file
-/// through the redirect (the token goes to the hub only, never to the CDN), checks the SHA-256
-/// and then knows the files are there. A file whose SHA-256 doesn't match fails.
-#[tokio::test]
-async fn a_hugging_face_model_downloads_into_its_queue() {
-    use prism_core::huggingface::{AddModel, RepoKind};
-    let site = hub_site().await;
     let tmp = tempfile::tempdir().unwrap();
     let core = core_in(tmp.path()).await;
-    core.update_settings(&serde_json::json!({"huggingFace": {"endpoint": site.hub, "token": ""}}))
-        .unwrap();
-    // No token (unless the Hugging Face tools saved one on this machine).
-    if prism_core::huggingface::token(&core.settings().hugging_face).is_none() {
-        let err = core
-            .hf_repo("owner/tiny-GGUF")
-            .await
-            .unwrap_err()
-            .to_string();
-        assert_eq!(err, "hf:needsToken");
-    }
-    core.update_settings(&serde_json::json!({"huggingFace": {"token": "hf_test"}}))
-        .unwrap();
-    let repo = core
-        .hf_repo(&format!("{}/owner/tiny-GGUF", site.hub))
-        .await
-        .unwrap();
-    assert_eq!(repo.sha, "c0ffee");
-    assert!(repo.gated && repo.gguf);
-    assert_eq!(repo.suggestion.variant.as_deref(), Some("Q4_K_M"));
-    assert_eq!(repo.suggestion.files, vec!["model-Q4_K_M.gguf"]);
-    let folder = PathBuf::from(&repo.folder);
-    assert_eq!(
-        folder,
-        tmp.path().join("dl").join("Models").join("owner/tiny-GGUF")
-    );
-
-    let wanted: Vec<_> = repo
-        .files
-        .iter()
-        .filter(|f| f.path != "model-Q8_0.gguf")
-        .cloned()
-        .collect();
     let mut rx = core.subscribe();
-    let added = core
-        .hf_add(AddModel {
-            kind: RepoKind::Model,
-            id: repo.id.clone(),
-            sha: repo.sha.clone(),
-            files: wanted,
-            folder: folder.clone(),
-            mode: None,
-        })
+    let items = core
+        .add_items(
+            vec![NewItem {
+                url: server.url("/blob/pack.zip"),
+                ..Default::default()
+            }],
+            StartMode::Now,
+        )
         .unwrap();
-    assert_eq!(added, 2);
-    let queue = core
-        .queues()
-        .into_iter()
-        .find(|q| q.id == "huggingface")
-        .expect("queue made");
+    let id = items[0].id.clone();
+    let path = wait_completed(&mut rx, &id).await;
+    assert!(path.exists(), "archive must exist after download");
+    let item = wait_extracted(&core, &id).await;
+    assert_eq!(item.status, Status::Completed);
+    assert!(item.extract_error.is_none(), "{:?}", item.extract_error);
+    let dir = item.extracted_dir.clone().unwrap();
     assert_eq!(
-        (queue.name.as_str(), queue.max_concurrent),
-        ("Hugging Face", 2)
+        std::fs::read_to_string(dir.join("hello.txt")).unwrap(),
+        "hello"
     );
-    let items = core.bootstrap().items;
-    assert_eq!(items.len(), 2);
-    assert!(
-        items
-            .iter()
-            .all(|i| i.queue_id.as_deref() == Some("huggingface"))
+    assert_eq!(
+        std::fs::read_to_string(dir.join("sub/world.txt")).unwrap(),
+        "world"
     );
-    let mut done = 0;
-    wait_event(&mut rx, 60, |ev| match ev {
-        CoreEvent::Completed(_) => {
-            done += 1;
-            (done == 2).then_some(())
-        }
-        CoreEvent::Failed(item) => panic!("failed: {:?}", item.error),
-        _ => None,
-    })
-    .await;
-    for (name, data) in &site.files[..2] {
-        assert_eq!(&std::fs::read(folder.join(name)).unwrap(), data, "{name}");
-    }
-    let cdn = site.cdn_auth.lock().unwrap().clone();
-    assert!(cdn.len() >= 2, "{cdn:?}");
-    assert!(
-        cdn.iter().all(|a| !a),
-        "the token never reaches the CDN: {cdn:?}"
+    assert!(path.exists(), "archive must survive extraction");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn auto_extract_failure_keeps_archive_and_reports() {
+    let server = TestServer::start(ServerConfig::default()).await.unwrap();
+    server.put_blob(
+        "broken.zip",
+        b"this is not a zip at all".to_vec(),
+        "application/zip",
     );
-    assert!(
-        site.hub_auth
-            .lock()
-            .unwrap()
-            .iter()
-            .all(|a| a.as_deref() == Some("Bearer hf_test")),
-        "the hub's links get the token"
-    );
-    let item = core
-        .bootstrap()
-        .items
-        .into_iter()
-        .find(|i| i.file_name == "model-Q4_K_M.gguf")
+    let tmp = tempfile::tempdir().unwrap();
+    let core = core_in(tmp.path()).await;
+    let mut rx = core.subscribe();
+    let items = core
+        .add_items(
+            vec![NewItem {
+                url: server.url("/blob/broken.zip"),
+                ..Default::default()
+            }],
+            StartMode::Now,
+        )
         .unwrap();
+    let id = items[0].id.clone();
+    let path = wait_completed(&mut rx, &id).await;
+    let item = wait_extracted(&core, &id).await;
+    assert_eq!(item.status, Status::Completed);
+    assert!(item.extracted_dir.is_none());
+    assert!(item.extract_error.is_some(), "failure must be reported");
+    assert!(path.exists(), "archive must survive a failed extraction");
     assert!(
-        item.request
-            .as_ref()
-            .is_some_and(|r| !r.to_string().contains("hf_test")),
-        "the token isn't stored"
+        !path.parent().unwrap().join("broken").exists(),
+        "failed extraction must not leave a folder"
     );
+}
 
-    // The window now knows what's there.
-    let present = core.hf_present(RepoKind::Model, &repo.id, &repo.sha, &folder, &repo.files);
-    assert_eq!(present.listed.len(), 2, "{present:?}");
-    core.delete_items(
-        &core
-            .bootstrap()
-            .items
-            .iter()
-            .map(|i| i.id.clone())
-            .collect::<Vec<_>>(),
-        false,
-        true,
-    )
-    .await
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn organize_moves_loose_file_into_category_folder() {
+    let server = TestServer::start(ServerConfig::default()).await.unwrap();
+    server.put_blob("report.txt", b"quarterly report".to_vec(), "text/plain");
+    let tmp = tempfile::tempdir().unwrap();
+    let core = core_in(tmp.path()).await;
+    let mut rx = core.subscribe();
+    // Added while category folders are off, so the file lands in the root.
+    let items = core
+        .add_items(
+            vec![NewItem {
+                url: server.url("/blob/report.txt"),
+                ..Default::default()
+            }],
+            StartMode::Later,
+        )
+        .unwrap();
+    let id = items[0].id.clone();
+    core.update_settings(&serde_json::json!({
+        "downloads": {"useCategoryFolders": true},
+    }))
     .unwrap();
-    let present = core.hf_present(RepoKind::Model, &repo.id, &repo.sha, &folder, &repo.files);
-    assert_eq!(present.on_disk.len(), 2, "{present:?}");
-
-    // A file that doesn't match its SHA-256 fails instead of passing as the model.
-    let mut bad = repo
-        .files
-        .iter()
-        .find(|f| f.path == "model-Q8_0.gguf")
-        .unwrap()
-        .clone();
-    bad.sha256 = Some("0".repeat(64));
-    core.hf_add(AddModel {
-        kind: RepoKind::Model,
-        id: repo.id.clone(),
-        sha: repo.sha.clone(),
-        files: vec![bad],
-        folder: folder.clone(),
-        mode: Some(StartMode::Now),
-    })
-    .unwrap();
-    wait_event(&mut rx, 60, |ev| match ev {
-        CoreEvent::Failed(item) if item.file_name == "model-Q8_0.gguf" => Some(()),
-        CoreEvent::Completed(item) if item.file_name == "model-Q8_0.gguf" => {
-            panic!("a wrong file passed")
+    core.start_items(&[id.clone()]);
+    let path = wait_completed(&mut rx, &id).await;
+    // The organize pass moves it into its category folder after completion.
+    let moved = tokio::time::timeout(Duration::from_secs(30), async {
+        loop {
+            let item = core.item(&id).unwrap();
+            if item.save_dir.file_name().is_some_and(|n| n == "Documents") {
+                return item;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
         }
-        _ => None,
     })
-    .await;
-    core.shutdown().await;
+    .await
+    .expect("file was not organized");
+    assert_eq!(
+        std::fs::read_to_string(moved.path()).unwrap(),
+        "quarterly report"
+    );
+    assert!(
+        !path.exists(),
+        "original loose file must be gone after the move"
+    );
 }

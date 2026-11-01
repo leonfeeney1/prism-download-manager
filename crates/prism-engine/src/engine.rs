@@ -169,7 +169,7 @@ impl Engine {
         match req.url.scheme() {
             "http" | "https" => {
                 let ctx = http::download::build_ctx(&self.inner, req, req.url.clone(), None)?;
-                let mut f = http::fetcher::HttpFetcher::new(ctx, 0);
+                let mut f = http::fetcher::HttpFetcher::new(ctx);
                 let (min_request, _) = self.inner.request_sizes(req.max_request_size);
                 let probe = f
                     .probe(min_request, req.method == crate::request::HttpMethod::Get)

@@ -164,6 +164,9 @@ fn main() {
             commands::bootstrap,
             commands::update_settings,
             commands::toggle_speed_limiter,
+            commands::lan_status,
+            commands::set_lan_enabled,
+            commands::set_lan_port,
             commands::add_url,
             commands::get_capture,
             commands::confirm_capture,
@@ -186,11 +189,6 @@ fn main() {
             commands::inspect_torrent,
             commands::read_torrent_file,
             commands::add_torrent,
-            commands::hf_context,
-            commands::hf_repo,
-            commands::hf_search,
-            commands::hf_present,
-            commands::hf_add,
             commands::media_inspect,
             commands::media_plan,
             commands::media_start,
@@ -211,6 +209,8 @@ fn main() {
             commands::redownload,
             commands::update_item,
             commands::item_details,
+            commands::add_source,
+            commands::extract_download,
             commands::open_item,
             commands::reveal_item,
             commands::open_path,
@@ -226,6 +226,7 @@ fn main() {
             commands::delete_category,
             commands::grabber_projects,
             commands::start_grabber,
+            commands::parse_grabber_sentence,
             commands::stop_grabber,
             commands::delete_grabber_project,
             commands::download_grabbed,
@@ -520,11 +521,6 @@ fn spawn_event_forwarder(app: AppHandle, core: Core) {
     });
 }
 
-/// A file of a Hugging Face model downloading in its queue (no window per file).
-fn in_model_queue(item: &prism_core::model::DownloadItem) -> bool {
-    item.queue_id.as_deref() == Some(prism_core::huggingface::QUEUE_ID)
-}
-
 /// Opens the item's progress window the first time it's seen active, when the setting is on.
 /// `opened_progress.insert` both checks and records "already handled" in one step.
 fn maybe_open_progress_window(
@@ -535,7 +531,6 @@ fn maybe_open_progress_window(
 ) {
     if item.status.is_active() {
         if settings.general.show_progress_window
-            && !in_model_queue(item)
             && opened_progress.insert(item.id.clone())
             && let Err(e) = windows::open_progress(app, &item.id)
         {
@@ -594,10 +589,7 @@ fn side_effects(
             }
         }
         CoreEvent::Completed(item) => {
-            if in_model_queue(item) {
-                // A model's files finish one after another: one notification when the queue is
-                // done instead of a dialog for every config file and weights part.
-            } else if settings.general.show_completion_dialog {
+            if settings.general.show_completion_dialog {
                 let _ = windows::open(app, "complete", Some(&item.id));
             } else {
                 notify("Download complete", &item.file_name);
@@ -628,12 +620,6 @@ fn side_effects(
         CoreEvent::OpenTorrent { source } => {
             if let Err(e) = windows::open(app, "torrent", Some(&encode_path(source))) {
                 tracing::error!("could not open the Add torrent window: {e}");
-            }
-        }
-        CoreEvent::OpenModel { source } => {
-            let id = (!source.is_empty()).then(|| encode_path(source));
-            if let Err(e) = windows::open(app, "model", id.as_deref()) {
-                tracing::error!("could not open the model window: {e}");
             }
         }
         CoreEvent::MediaJob(job) => {

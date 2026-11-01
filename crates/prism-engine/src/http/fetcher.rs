@@ -70,7 +70,6 @@ pub(crate) struct Probe {
 /// One worker's HTTP connection.
 pub(crate) struct HttpFetcher {
     ctx: Arc<HttpCtx>,
-    worker: WorkerId,
     client: Result<reqwest::Client, EngineError>,
     /// The NTLM handshake succeeded on the current connection.
     ntlm_ready: bool,
@@ -83,8 +82,10 @@ pub(crate) struct HttpFactory {
 
 impl FetcherFactory for HttpFactory {
     type Fetcher = HttpFetcher;
-    fn create(&self, worker: WorkerId) -> HttpFetcher {
-        HttpFetcher::new(self.ctx.clone(), worker)
+    fn create(&self, _worker: WorkerId) -> HttpFetcher {
+        // Sources are assigned per request (round-robin), not per worker, so the worker
+        // id no longer selects a source.
+        HttpFetcher::new(self.ctx.clone())
     }
 }
 
@@ -130,11 +131,10 @@ fn status_error(status: u16) -> EngineError {
 }
 
 impl HttpFetcher {
-    pub(crate) fn new(ctx: Arc<HttpCtx>, worker: WorkerId) -> Self {
+    pub(crate) fn new(ctx: Arc<HttpCtx>) -> Self {
         let client = build_client(&ctx.spec);
         Self {
             ctx,
-            worker,
             client,
             ntlm_ready: false,
         }
@@ -444,7 +444,7 @@ impl HttpFetcher {
         let mut switches = 0usize;
         let max_switches = 2 + self.ctx.sources.mirror_urls().len();
         loop {
-            let (src, url, via_final) = self.ctx.sources.pick(self.worker);
+            let (src, url, via_final) = self.ctx.sources.pick_next();
             let v = self.ctx.validators();
             let range = if v.ranged { Some((from, to)) } else { None };
             let resp = match self.send(&url, range, if_range).await {
@@ -596,6 +596,9 @@ impl HttpFetcher {
                 return Err(FetchError::fatal(EngineError::ValidatorMismatch));
             }
         }
+        // A 206 from a mirror proves it still serves the same file (size already
+        // checked): its failure streak resets.
+        self.ctx.sources.mark_ok(src);
         self.ctx.mark_probed();
         Ok(HttpStream {
             resp,

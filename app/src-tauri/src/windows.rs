@@ -49,10 +49,6 @@ fn spec(kind: &str) -> Spec {
             ..s(700.0, 420.0, false, true, "Downloading")
         },
         "torrent" => s(680.0, 600.0, true, true, "Add Torrent"),
-        "model" => Spec {
-            min_size: Some((600.0, 520.0)),
-            ..s(760.0, 680.0, false, true, "Download Model")
-        },
         // Convert / Make smaller: file cards, the choices and the jobs below.
         "tools" => Spec {
             min_size: Some((560.0, 540.0)),

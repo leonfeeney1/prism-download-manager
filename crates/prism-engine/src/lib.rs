@@ -55,7 +55,7 @@ pub use limiter::{MAX_ACQUIRE, RateLimiter};
 pub use media::{VariantInfo, list_variants};
 pub use progress::{
     Completed, DownloadEvent, DownloadState, ProbeInfo, ProgressSnapshot, SegmentStatus,
-    SegmentView,
+    SegmentView, SourceInfo,
 };
 pub use request::{
     AuthScheme, ChecksumAlgo, ConflictPolicy, Credentials, Destination, DownloadRequest,

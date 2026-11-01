@@ -95,7 +95,6 @@ const seeds: Seed[] = [
   ["lecture-08-distributed-systems.mp4", "https://ocw.example.edu/lectures/08.m3u8", 1.3 * GB, "failed", 0.27, "video", { kind: "hls", error: "Server returned 403 Forbidden — the link has expired. Use Refresh address." }],
   ["The Art of Computer Programming Vol 1.epub", "https://books.example.com/taocp1.epub", 14.2 * MB, "completed", 1, "documents"],
   ["wallpapers-4k-pack.7z", "https://cdn.example.net/wallpapers/4k-pack.7z", 940 * MB, "idle", 0, "images", { queueId: "night" }],
-  ["llama-weights-q4.gguf", "https://huggingface.co/x/model/resolve/main/q4.gguf", 4.9 * GB, "idle", 0, "other", { queueId: "night" }],
   ["podcast-episode-212.mp3", "https://media.example.fm/ep212.mp3", 86 * MB, "completed", 1, "music"],
   ["GIMP-3.2.0-setup.exe", "https://download.gimp.org/gimp/v3.2/windows/gimp-3.2.0-setup.exe", 356 * MB, "completed", 1, "programs"],
   ["Sintel (2010) 4K.mkv", "https://www.youtube.com/watch?v=eRsGyueVLvQ", 2.6 * GB, "paused", 0.52, "video", { kind: "video", media: { title: "Sintel", quality: "2160p · VP9", site: "youtube.com", duration: 888 } }],
@@ -168,16 +167,16 @@ function demoParam(name: string): string | null {
 const settings: Settings = {
   general: { launchAtStartup: true, startMinimized: false, closeToTray: true, showCaptureDialog: true, showProgressWindow: false, showCompletionDialog: true, notifications: true, confirmDelete: true, useTrash: true, checkUpdates: true, language: "", removeDeletedFiles: false, hideDockIcon: false },
   appearance: { theme: (demoParam("theme") as "dark" | "light" | null) ?? "system", accent: "prism", density: demoParam("density") === "compact" ? "compact" : "comfortable", motion: "system", reduceTransparency: false, windowMaterial: false, visibleColumns: ["name", "size", "status", "progress", "speed", "eta", "added"], compactView: demoParam("compact") === "1" },
-  downloads: { defaultDir: "C:\\Users\\you\\Downloads", useCategoryFolders: true, defaultConnections: 8, maxConnections: 32, conflict: "ask", maxRetries: 20, speedLimit: 5 * MB, speedLimiterEnabled: false, verifyChecksums: true, autoStart: true },
+  downloads: { defaultDir: "C:\\Users\\you\\Downloads", useCategoryFolders: true, defaultConnections: 8, maxConnections: 32, conflict: "ask", maxRetries: 20, speedLimit: 5 * MB, speedLimiterEnabled: false, verifyChecksums: true, autoStart: true, autoExtract: true },
   connection: { userAgent: "", connectTimeoutSecs: 15, readTimeoutSecs: 30, httpVersion: "http1", maxConnectionsPerHost: 0 },
   proxy: { mode: "system", address: "", username: "", password: "", bypass: [] },
   capture: { enabled: true, extensions: ["zip", "rar", "7z", "exe", "msi", "iso", "mp4", "mkv", "mp3", "pdf"], mimeTypes: ["application/octet-stream"], excludedSites: ["*.update.microsoft.com"], minSizeKb: 0, bypassKey: "alt", videoButton: true, videoMinDurationSecs: 0 },
   sounds: { enabled: true, onComplete: true, onFailed: true, onQueueDone: true, volume: 0.6, completeSound: "classic" },
   clipboard: { monitor: true, ask: true },
   grabber: { defaultDepth: 2, maxPages: 2000, concurrentRequests: 6, respectRobots: true },
+  lan: { enabled: false, port: 8421 },
   antivirus: { enabled: false, kind: "auto", command: "", args: "", extensions: [] },
-  video: { ytdlpPath: "", ffmpegPath: "", autoUpdate: true, preferredHeight: 1080, container: "mp4", audioFormat: "m4a", embedSubtitles: false, subtitleLangs: "en.*", embedThumbnail: true, embedMetadata: true, embedChapters: true, sponsorblock: "off", accelerate: true, cookiesFromBrowser: "", fileTemplate: "%(title)s [%(id)s].%(ext)s", numberPlaylistVideos: false },
-  huggingFace: { endpoint: "", token: "", folder: "" },
+  video: { ytdlpPath: "", ffmpegPath: "", autoUpdate: true, preferredHeight: 1080, container: "mp4", audioFormat: "m4a", embedSubtitles: false, subtitleLangs: "en.*", translateSubtitles: false, embedThumbnail: true, embedMetadata: true, embedChapters: true, sponsorblock: "off", accelerate: true, cookiesFromBrowser: "", fileTemplate: "%(title)s [%(id)s].%(ext)s", numberPlaylistVideos: false },
   shortcuts: {},
   // The demo bootstrap version: "What's new" opens with ?sheet=whatsnew, or by itself with ?lastseen=1.0.9 (an update).
   lastSeenVersion: (typeof location === "undefined" ? null : new URLSearchParams(location.search).get("lastseen")) ?? "1.2.3",
@@ -468,6 +467,9 @@ function details(id: string): ItemDetails | null {
     segments: segs,
     progress: null,
     speedHistory: history[id] ?? [],
+    sources: [{ url: item.url, primary: true, validated: true, benched: false, requests: 0 }].concat(
+      (item.mirrors ?? []).map((url) => ({ url, primary: false, validated: false, benched: false, requests: 0 })),
+    ),
   };
 }
 
@@ -660,6 +662,37 @@ const commands: Record<string, (args: Record<string, unknown>) => unknown> = {
     emit({ type: "settingsChanged", payload: settings });
     return settings.downloads.speedLimiterEnabled;
   },
+  lan_status: () => ({
+    enabled: settings.lan.enabled,
+    running: settings.lan.enabled,
+    address: settings.lan.enabled ? `http://192.168.1.42:${settings.lan.port}` : null,
+    port: settings.lan.port,
+    sharedCount: Object.values(items).filter((i) => i.lanShared && i.status === "completed" && !i.trashed).length,
+  }),
+  set_lan_enabled: ({ enabled }) => {
+    settings.lan.enabled = Boolean(enabled);
+    emit({ type: "settingsChanged", payload: structuredClone(settings) });
+    return {
+      enabled: settings.lan.enabled,
+      running: settings.lan.enabled,
+      address: settings.lan.enabled ? `http://192.168.1.42:${settings.lan.port}` : null,
+      port: settings.lan.port,
+      sharedCount: Object.values(items).filter((i) => i.lanShared && i.status === "completed" && !i.trashed).length,
+    };
+  },
+  set_lan_port: ({ port }) => {
+    const p = Number(port);
+    if (!Number.isInteger(p) || p < 1 || p > 65535) throw new Error("Port must be between 1 and 65535");
+    settings.lan.port = p;
+    emit({ type: "settingsChanged", payload: structuredClone(settings) });
+    return {
+      enabled: settings.lan.enabled,
+      running: settings.lan.enabled,
+      address: settings.lan.enabled ? `http://192.168.1.42:${settings.lan.port}` : null,
+      port: settings.lan.port,
+      sharedCount: Object.values(items).filter((i) => i.lanShared && i.status === "completed" && !i.trashed).length,
+    };
+  },
   add_url: ({ args }) => {
     const c = demoCapture((args as { url: string }).url);
     captures[c.id] = c;
@@ -828,55 +861,6 @@ const commands: Record<string, (args: Record<string, unknown>) => unknown> = {
       return { ...job };
     });
   },
-  hf_context: () => ({ endpoint: "https://huggingface.co", token: null, folder: "C:\\Users\\demo\\Downloads\\Models", lmStudio: "C:\\Users\\demo\\.lmstudio\\models" }),
-  hf_search: async ({ query }) => {
-    await sleep(250);
-    const all = [
-      { id: "unsloth/Qwen3-8B-GGUF", downloads: 2_410_000, likes: 310, pipelineTag: "text-generation", gguf: true, gated: false },
-      { id: "Qwen/Qwen3-8B", downloads: 8_095_680, likes: 2152, pipelineTag: "text-generation", gguf: false, gated: false },
-      { id: "meta-llama/Llama-3.1-8B-Instruct", downloads: 6_120_000, likes: 4800, pipelineTag: "text-generation", gguf: false, gated: true },
-      { id: "google/gemma-3-4b-it-qat-q4_0-gguf", downloads: 940_000, likes: 520, pipelineTag: "image-text-to-text", gguf: true, gated: true },
-      { id: "openai/gpt-oss-20b", downloads: 5_300_000, likes: 3900, pipelineTag: "text-generation", gguf: false, gated: false },
-      { id: "black-forest-labs/FLUX.1-schnell", downloads: 1_800_000, likes: 4100, pipelineTag: "text-to-image", gguf: false, gated: false },
-    ];
-    const q = String(query ?? "").toLowerCase();
-    return q ? all.filter((h) => h.id.toLowerCase().includes(q.split(" ")[0])) : all;
-  },
-  hf_repo: async ({ input }) => {
-    await sleep(450);
-    const id = String(input).replace(/^https?:\/\/[^/]+\//, "").split("/").slice(0, 2).join("/");
-    if (!/^[\w.-]+\/[\w.-]+$/.test(id)) throw new Error("hf:notFound");
-    const gguf = /gguf/i.test(id);
-    const files: [string, number][] = gguf
-      ? [
-          [".gitattributes", 2_100], ["README.md", 9_800], ["Qwen3-8B-Q2_K.gguf", 3.28 * GB], ["Qwen3-8B-Q3_K_M.gguf", 4.12 * GB],
-          ["Qwen3-8B-Q4_K_M.gguf", 5.03 * GB], ["Qwen3-8B-Q5_K_M.gguf", 5.85 * GB], ["Qwen3-8B-Q6_K.gguf", 6.73 * GB],
-          ["Qwen3-8B-Q8_0.gguf", 8.71 * GB], ["Qwen3-8B-BF16.gguf", 16.4 * GB],
-        ]
-      : [
-          [".gitattributes", 1_600], ["README.md", 16_000], ["config.json", 728], ["generation_config.json", 239],
-          ["model-00001-of-00005.safetensors", 3.99 * GB], ["model-00002-of-00005.safetensors", 3.99 * GB], ["model-00003-of-00005.safetensors", 3.96 * GB],
-          ["model-00004-of-00005.safetensors", 3.19 * GB], ["model-00005-of-00005.safetensors", 1.24 * GB], ["model.safetensors.index.json", 32_900],
-          ["tokenizer.json", 11.4 * MB], ["tokenizer_config.json", 9_700], ["merges.txt", 1.67 * MB], ["vocab.json", 2.78 * MB],
-        ];
-    const variants = gguf
-      ? files.filter(([p]) => p.endsWith(".gguf")).map(([p, size]) => ({ label: p.replace(/^.*-(\w+)\.gguf$/, "$1"), files: [p], size }))
-      : [];
-    const suggested = gguf ? ["Qwen3-8B-Q4_K_M.gguf"] : files.map(([p]) => p).filter((p) => p !== ".gitattributes");
-    return {
-      kind: "model", id, sha: "b968826d9c46dd6066d109eabc6255188de91218", revision: "main", gated: /llama|gemma/i.test(id), private: false,
-      downloads: gguf ? 2_410_000 : 8_095_680, likes: gguf ? 310 : 2152, pipelineTag: "text-generation", library: gguf ? null : "transformers", gguf,
-      files: files.map(([path, size]) => ({ path, size, sha256: null })), path: null, pageUrl: `https://huggingface.co/${id}`,
-      folder: `C:\\Users\\demo\\Downloads\\Models\\${id.replace("/", "\\")}`,
-      suggestion: { variants, variant: gguf ? "Q4_K_M" : null, extras: [], files: suggested },
-    };
-  },
-  hf_present: () => ({ onDisk: [], listed: [] }),
-  hf_add: ({ args }) => {
-    const a = args as { id: string; files: { path: string; size: number }[]; mode?: StartMode | null };
-    for (const f of a.files) newItem(f.path.split("/").pop()!, `https://huggingface.co/${a.id}/resolve/main/${f.path}`, f.size, "other", startStatus(a.mode ?? { type: "now" }));
-    return a.files.length;
-  },
   add_torrent: ({ args }) => {
     const a = args as { name: string; size?: number; mode?: StartMode };
     return newItem(a.name, "magnet:?xt=urn:btih:7a3c1f9e", a.size ?? null, "compressed", { kind: "torrent", ...startStatus(a.mode ?? { type: "now" }) });
@@ -885,6 +869,15 @@ const commands: Record<string, (args: Record<string, unknown>) => unknown> = {
     const it = items[String(id)];
     if (!it) throw new Error("unknown item");
     Object.assign(it, patch);
+    emit({ type: "itemUpdated", payload: { ...it } });
+    return it;
+  },
+  add_source: ({ id, url }) => {
+    const it = items[String(id)];
+    if (!it) throw new Error("unknown item");
+    const u = String(url).trim();
+    if (!u) throw new Error("That address is not a valid URL");
+    if (it.url !== u && !(it.mirrors ?? []).includes(u)) it.mirrors = [...(it.mirrors ?? []), u];
     emit({ type: "itemUpdated", payload: { ...it } });
     return it;
   },

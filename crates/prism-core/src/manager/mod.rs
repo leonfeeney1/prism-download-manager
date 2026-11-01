@@ -17,7 +17,7 @@ pub use capture::{
     VideoEntry,
 };
 pub use jobs::ItemDetails;
-pub(crate) use jobs::{engine_config, http_preference, proxy_config};
+pub use jobs::SourceStatus;
 pub use peek::{PeekProblem, ZipFile};
 
 use crate::categories;
@@ -87,6 +87,8 @@ pub struct ItemPatch {
     pub checksum: Option<Option<String>>,
     pub username: Option<String>,
     pub password: Option<String>,
+    /// Offer the item on the LAN (completed items only; see `update_item`).
+    pub lan_shared: Option<bool>,
 }
 
 pub(crate) struct State {
@@ -122,6 +124,8 @@ pub(crate) struct Inner {
     pub outcomes: mpsc::UnboundedSender<JobOutcome>,
     pub data_dir: PathBuf,
     pub ipc: Mutex<Option<crate::ipc::IpcServer>>,
+    /// The LAN sharing server, when sharing is on (one-tap stop = drop this).
+    pub lan: Mutex<Option<crate::lan::LanServer>>,
     pub clipboard: Mutex<Option<crate::clipboard::ClipboardMonitor>>,
     pub post_action_cancel: Mutex<Option<tokio_util::sync::CancellationToken>>,
     /// Last time the browser extension talked to us (ms since epoch, 0 = never).
@@ -230,6 +234,7 @@ impl Core {
             outcomes: outcome_tx,
             data_dir: opts.data_dir.clone(),
             ipc: Mutex::new(None),
+            lan: Mutex::new(None),
             clipboard: Mutex::new(None),
             post_action_cancel: Mutex::new(None),
             ext_seen: std::sync::atomic::AtomicI64::new(
@@ -258,6 +263,13 @@ impl Core {
             {
                 Ok(server) => *core.0.ipc.lock() = Some(server),
                 Err(e) => tracing::error!("browser IPC unavailable: {e}"),
+            }
+        }
+        // LAN sharing restarts when it was on: a bind failure only logs, the
+        // app itself still starts (the toggle reports it via `lan_status`).
+        if core.settings().lan.enabled {
+            if let Err(e) = core.start_lan_server().await {
+                tracing::error!("LAN sharing unavailable: {e}");
             }
         }
         if opts.clipboard {
@@ -336,6 +348,83 @@ impl Core {
         self.0.ipc.lock().as_ref().map(|s| s.info.port)
     }
 
+    // ----- LAN sharing ----------------------------------------------------------------------
+
+    pub fn lan_status(&self) -> crate::lan::LanStatus {
+        let settings = self.settings().lan;
+        let st = self.0.state.lock();
+        let shared_count = st
+            .items
+            .values()
+            .filter(|i| i.lan_shared && i.status == Status::Completed && !i.trashed)
+            .count();
+        let (running, address) = match self.0.lan.lock().as_ref() {
+            Some(server) => (true, Some(format!("http://{}", server.addr))),
+            None => (false, None),
+        };
+        crate::lan::LanStatus {
+            enabled: settings.enabled,
+            running,
+            address,
+            port: settings.port,
+            shared_count,
+        }
+    }
+
+    /// Start the LAN server on the machine's LAN address, if it is not running.
+    async fn start_lan_server(&self) -> Result<()> {
+        if self.0.lan.lock().is_some() {
+            return Ok(());
+        }
+        let ip = crate::lan::local_lan_ip()
+            .ok_or_else(|| anyhow!("No local network address found"))?;
+        let port = self.settings().lan.port;
+        let server = crate::lan::LanServer::start(
+            Arc::new(self.clone()),
+            std::net::SocketAddr::new(ip, port),
+        )
+        .await
+        .context("Could not start the LAN server")?;
+        *self.0.lan.lock() = Some(server);
+        Ok(())
+    }
+
+    /// Turn LAN sharing on or off, effective immediately. The setting is only
+    /// persisted once the server state matches it, so a failed bind never
+    /// leaves the toggle claiming to share.
+    pub async fn set_lan_enabled(&self, enabled: bool) -> Result<crate::lan::LanStatus> {
+        if enabled {
+            self.start_lan_server().await?;
+            self.update_settings(&serde_json::json!({"lan": {"enabled": true}}))?;
+        } else {
+            // Dropping the server sends its shutdown signal at once.
+            *self.0.lan.lock() = None;
+            self.update_settings(&serde_json::json!({"lan": {"enabled": false}}))?;
+        }
+        Ok(self.lan_status())
+    }
+
+    /// Change the LAN port, restarting the server when it is running. A failed
+    /// restart keeps the old server and the old port.
+    pub async fn set_lan_port(&self, port: u16) -> Result<crate::lan::LanStatus> {
+        if port == 0 {
+            return Err(anyhow!("Port must be between 1 and 65535"));
+        }
+        if self.0.lan.lock().is_some() {
+            let ip = crate::lan::local_lan_ip()
+                .ok_or_else(|| anyhow!("No local network address found"))?;
+            let server = crate::lan::LanServer::start(
+                Arc::new(self.clone()),
+                std::net::SocketAddr::new(ip, port),
+            )
+            .await
+            .context("Could not start the LAN server on the new port")?;
+            *self.0.lan.lock() = Some(server);
+        }
+        self.update_settings(&serde_json::json!({"lan": {"port": port}}))?;
+        Ok(self.lan_status())
+    }
+
     pub fn bootstrap(&self) -> Bootstrap {
         let st = self.0.state.lock();
         let mut items: Vec<DownloadItem> = st.items.values().cloned().collect();
@@ -402,6 +491,18 @@ impl Core {
         if let Some(t) = self.0.torrent.get() {
             t.set_limits(global, global);
         }
+        // LAN sharing set through a generic settings patch (e.g. an imported
+        // settings file) takes effect best-effort; the UI toggle uses the
+        // dedicated command, which awaits the start and reports failures.
+        if s.lan.enabled && self.0.lan.lock().is_none() {
+            let core = self.clone();
+            let _rt = crate::rt::enter();
+            tokio::spawn(async move {
+                if let Err(e) = core.start_lan_server().await {
+                    tracing::error!("LAN sharing unavailable: {e}");
+                }
+            });
+        }
     }
 
     pub fn toggle_speed_limiter(&self) -> Result<bool> {
@@ -465,6 +566,11 @@ impl Core {
             return Err(anyhow!("Pause the download before renaming or moving it"));
         }
         let current = self.item(id).ok_or_else(|| anyhow!("unknown item"))?;
+        if patch.lan_shared == Some(true) && current.status != Status::Completed {
+            return Err(anyhow!(
+                "Only completed downloads can be shared on the local network"
+            ));
+        }
         // Moving/renaming a finished file moves it on disk too.
         if current.status == Status::Completed
             && (patch.file_name.is_some() || patch.save_dir.is_some())
@@ -506,6 +612,9 @@ impl Core {
                 if let Some(v) = patch.checksum {
                     item.checksum = v.filter(|s| !s.trim().is_empty());
                 }
+                if let Some(v) = patch.lan_shared {
+                    item.lan_shared = v;
+                }
                 if let Some(url) = patch.url {
                     item.url = url.clone();
                     item.final_url = None;
@@ -540,6 +649,181 @@ impl Core {
             }
         }
         Ok(updated)
+    }
+
+    /// Adds an extra source URL to a download. For a running download the engine
+    /// validates it first (same size, range support) and only then is it persisted,
+    /// so a rejected source never enters the item. For a paused or queued item it is
+    /// stored (in the item and in its stored request) and validated when the download
+    /// next starts, like any mirror given at creation.
+    pub async fn add_source(&self, id: &str, url_str: &str) -> Result<DownloadItem> {
+        let url = url_str
+            .trim()
+            .parse::<prism_engine::Url>()
+            .map_err(|_| anyhow!("That address is not a valid URL"))?;
+        let item = self.item(id).ok_or_else(|| anyhow!("unknown item"))?;
+        if item.trashed {
+            return Err(anyhow!("That download is in the trash"));
+        }
+        if item.status == Status::Completed {
+            return Err(anyhow!("That download is already complete"));
+        }
+        if item.url == url_str.trim() || item.mirrors.iter().any(|m| m == url_str.trim()) {
+            return Err(anyhow!("That address is already a source of this download"));
+        }
+        if let Some(job) = self.0.state.lock().jobs.get(id).cloned() {
+            job.add_source(url.clone())
+                .await
+                .map_err(|e| anyhow!("{}", e.user_message()))?;
+        }
+        let url_text = url_str.trim().to_string();
+        let updated = self
+            .with_item(id, |item| {
+                item.mirrors.push(url_text.clone());
+                if let Some(req) = item.request.as_mut().and_then(|r| r.as_object_mut()) {
+                    let mut mirrors: Vec<serde_json::Value> = req
+                        .get("mirrors")
+                        .and_then(|v| v.as_array())
+                        .cloned()
+                        .unwrap_or_default();
+                    mirrors.push(serde_json::Value::String(url_text.clone()));
+                    req.insert("mirrors".into(), serde_json::Value::Array(mirrors));
+                }
+                item.clone()
+            })
+            .ok_or_else(|| anyhow!("unknown item"))?;
+        Ok(updated)
+    }
+
+    // ----- auto-extract + organize -----------------------------------------------------------
+
+    /// Extract a finished archive on demand (the item menu's "Extract"). Works
+    /// regardless of the auto-extract setting. The item keeps its Completed
+    /// status either way; a failure is recorded on the item and returned, and
+    /// the archive is left untouched.
+    pub async fn extract_download(&self, id: &str) -> Result<DownloadItem> {
+        let item = self.item(id).ok_or_else(|| anyhow!("unknown item"))?;
+        if item.trashed {
+            return Err(anyhow!("That download is in the trash"));
+        }
+        if item.status != Status::Completed {
+            return Err(anyhow!("Only a finished download can be extracted"));
+        }
+        let path = item.path();
+        if crate::extract::detect_archive(&item.file_name).is_none() {
+            return Err(anyhow!("That file is not a supported archive"));
+        }
+        let dest = path
+            .parent()
+            .map(|d| d.join(crate::extract::archive_stem(&item.file_name)))
+            .ok_or_else(|| anyhow!("That file has no folder"))?;
+        let archive = path.clone();
+        let result =
+            tokio::task::spawn_blocking(move || crate::extract::extract_archive(&archive, &dest))
+                .await
+                .map_err(|e| anyhow!("extraction task failed: {e}"))?;
+        match result {
+            Ok(dir) => Ok(self
+                .with_item(id, |i| {
+                    i.extracted_dir = Some(dir);
+                    i.extract_error = None;
+                    i.clone()
+                })
+                .ok_or_else(|| anyhow!("unknown item"))?),
+            Err(message) => {
+                self.with_item(id, |i| {
+                    i.extracted_dir = None;
+                    i.extract_error = Some(message.clone());
+                    i.clone()
+                });
+                Err(anyhow!("{message}"))
+            }
+        }
+    }
+
+    /// Runs after a download completes (own task, see `handle_outcome`). When
+    /// the auto-extract setting is on, archives extract into a folder next to
+    /// the file and loose files move into their category folder; both are
+    /// skipped when the setting is off. Failures never change the Completed
+    /// status and never delete the archive.
+    async fn post_process_completed(&self, item: DownloadItem) {
+        let s = self.settings();
+        if !s.downloads.auto_extract || item.trashed {
+            return;
+        }
+        let path = item.path();
+        if !path.is_file() {
+            return;
+        }
+        if crate::extract::detect_archive(&item.file_name).is_some() {
+            let dest = match path
+                .parent()
+                .map(|d| d.join(crate::extract::archive_stem(&item.file_name)))
+            {
+                Some(d) => d,
+                None => return,
+            };
+            let archive = path.clone();
+            let result = tokio::task::spawn_blocking(move || {
+                crate::extract::extract_archive(&archive, &dest)
+            })
+            .await;
+            match result {
+                Ok(Ok(dir)) => {
+                    self.with_item(&item.id, |i| {
+                        i.extracted_dir = Some(dir);
+                        i.extract_error = None;
+                    });
+                }
+                Ok(Err(message)) => {
+                    tracing::warn!("extract {}: {message}", item.id);
+                    self.with_item(&item.id, |i| {
+                        i.extracted_dir = None;
+                        i.extract_error = Some(message);
+                    });
+                }
+                Err(e) => {
+                    tracing::warn!("extract task {}: {e}", item.id);
+                }
+            }
+            return;
+        }
+        // Not an archive: organize only a file sitting loose in the download
+        // folder (category folders place everything else already).
+        let category_name = {
+            let st = self.0.state.lock();
+            st.categories
+                .iter()
+                .find(|c| c.id == item.category)
+                .map(|c| c.name.clone())
+        };
+        let Some(name) = category_name else {
+            return;
+        };
+        let Some(target) = crate::extract::organize_target(
+            &path,
+            &s.downloads.default_dir,
+            s.downloads.use_category_folders,
+            &item.category,
+            &name,
+        ) else {
+            return;
+        };
+        if let Some(parent) = target.parent() {
+            if std::fs::create_dir_all(parent).is_err() {
+                return;
+            }
+        }
+        if std::fs::rename(&path, &target).is_err() {
+            tracing::warn!("organize {}: could not move file", item.id);
+            return;
+        }
+        let dir = target.parent().map(|d| d.to_path_buf());
+        self.with_item(&item.id, |i| {
+            if let Some(d) = dir {
+                i.save_dir = d;
+            }
+        });
     }
 
     // ----- start / pause / delete --------------------------------------------------------------
@@ -799,6 +1083,25 @@ impl Core {
                 .get(id)
                 .map(|h| h.iter().copied().collect())
                 .unwrap_or_default(),
+            sources: match job {
+                Some(j) => j.sources(),
+                // Not running: the configured list (primary + mirrors, unmeasured).
+                None => std::iter::once(jobs::SourceStatus {
+                    url: item.url.clone(),
+                    primary: true,
+                    validated: true,
+                    benched: false,
+                    requests: 0,
+                })
+                .chain(item.mirrors.iter().map(|m| jobs::SourceStatus {
+                    url: m.clone(),
+                    primary: false,
+                    validated: false,
+                    benched: false,
+                    requests: 0,
+                }))
+                .collect(),
+            },
             item,
         })
     }
@@ -973,7 +1276,14 @@ impl Core {
                                 kind: "complete".into(),
                             });
                         }
-                        self.emit(CoreEvent::Completed(item));
+                        self.emit(CoreEvent::Completed(item.clone()));
+                        // Auto-extract + organize run after completion, in their own
+                        // task: extraction of a big archive must not stall the
+                        // outcome loop that other finishing jobs wait on.
+                        let core = self.clone();
+                        tokio::spawn(async move {
+                            core.post_process_completed(item).await;
+                        });
                     } else {
                         self.emit(CoreEvent::Failed(item));
                     }
@@ -1216,9 +1526,6 @@ impl Core {
             .compression_method(zip::CompressionMethod::Deflated);
         let mut settings = self.settings();
         settings.proxy.password = String::new();
-        if !settings.hugging_face.token.is_empty() {
-            settings.hugging_face.token = "(set)".into();
-        }
         zip.start_file("settings.json", opts)?;
         zip.write_all(serde_json::to_string_pretty(&settings)?.as_bytes())?;
         let summary: Vec<serde_json::Value> = {

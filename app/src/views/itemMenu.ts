@@ -66,9 +66,17 @@ export function itemMenu(ids: string[]): MenuEntry[] {
         ]
       : [];
 
+  // A finished archive that was not extracted yet (same formats the backend extracts).
+  const isArchive = one && /\.(zip|tar|tgz|txz|tar\.gz|tar\.xz)$/i.test(one.fileName);
+  const extractEntry: MenuEntry[] =
+    one && done && isArchive && !one.extractedDir
+      ? [{ label: t("Extract"), icon: "folder-open", onSelect: () => actions.extract(one.id) }]
+      : [];
+
   return [
     { label: t("Open"), icon: "open-file", kbd: "Enter", disabled: !done, onSelect: () => one && actions.open(one.id) },
     { label: t("Show in folder"), icon: "folder-open", disabled: !one, onSelect: () => one && actions.reveal(one.id) },
+    ...extractEntry,
     ...tools,
     { separator: true },
     { label: t("Resume"), icon: "resume", disabled: !list.some((i) => canResume(i.status) || i.status === "queued"), onSelect: () => actions.resume(ids) },

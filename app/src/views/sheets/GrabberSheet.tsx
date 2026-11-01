@@ -90,6 +90,53 @@ export function GrabberSheet({ projectId }: { projectId?: string | null }) {
   const set = (p: Partial<GrabberConfig>) => setCfg((c) => ({ ...c, ...p }));
   const validUrl = /^https?:\/\/\S+\.\S+/.test(cfg.startUrl.trim());
 
+  // Plain-English input: parse locally, show the parsed rules for review,
+  // and only apply them (never start a crawl) when the user says so.
+  const [sentence, setSentence] = useState("");
+  const [nlParsed, setNlParsed] = useState<GrabberConfig | null>(null);
+  const [nlError, setNlError] = useState("");
+  const [nlBusy, setNlBusy] = useState(false);
+  const parseSentence = async () => {
+    const s = sentence.trim();
+    if (!s) return;
+    setNlBusy(true);
+    setNlError("");
+    setNlParsed(null);
+    try {
+      const parsed = await api.parseGrabberSentence(s);
+      if (!parsed) {
+        setNlError("Sentence parsing is only available in the app.");
+      } else {
+        setNlParsed(parsed);
+      }
+    } catch (e) {
+      setNlError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setNlBusy(false);
+    }
+  };
+  const applyParsed = () => {
+    if (!nlParsed) return;
+    set({
+      startUrl: nlParsed.startUrl,
+      extensions: nlParsed.extensions,
+      includeEmbedded: nlParsed.includeEmbedded,
+      depth: nlParsed.depth,
+      scope: nlParsed.scope,
+      maxPages: nlParsed.maxPages,
+      exclude: nlParsed.exclude,
+    });
+    if (!name.trim()) setName(hostOf(nlParsed.startUrl));
+    setNlParsed(null);
+    setStep(1);
+  };
+  const scopeLabel: Record<GrabberScope, string> = {
+    subPath: t("This folder"),
+    sameHost: t("Same host"),
+    sameDomain: t("Same site"),
+    any: t("Any site"),
+  };
+
   const start = async () => {
     const proj = await attempt(api.startGrabber(pid, name.trim() || hostOf(cfg.startUrl) || t("Grabber project"), { ...cfg, startUrl: cfg.startUrl.trim() }), t("Could not start the crawl"));
     if (!proj) return;
@@ -115,6 +162,46 @@ export function GrabberSheet({ projectId }: { projectId?: string | null }) {
       <div className="grab__body">
         {step === 0 && (
           <div className="grab__form">
+            <Field label={t("Describe what to grab")} hint={t("Write it in plain English, for example: download all PDFs from example.com. Nothing starts until you check the rules below.")}>
+              <div className="withbtn">
+                <TextField value={sentence} onChange={(v) => { setSentence(v); setNlError(""); }} label={t("Describe what to grab")} icon="grabber" placeholder="download all PDFs from example.com" onEnter={parseSentence} />
+                <button type="button" className="btn btn--primary" disabled={!sentence.trim() || nlBusy} onClick={parseSentence}>
+                  {t("Parse")}
+                </button>
+              </div>
+              {nlError && <span className="field__hint text-warning">{nlError}</span>}
+              {nlParsed && (
+                <div className="grab__nl">
+                  <div className="grab__nl-row">
+                    <span>{t("Start page")}</span>
+                    <b className="ellipsis">{nlParsed.startUrl}</b>
+                  </div>
+                  <div className="grab__nl-row">
+                    <span>{t("Extensions")}</span>
+                    <b>{nlParsed.extensions.length ? nlParsed.extensions.join(", ") : t("All")}</b>
+                  </div>
+                  <div className="grab__nl-row">
+                    <span>{t("Link depth")}</span>
+                    <b>{nlParsed.depth}</b>
+                  </div>
+                  <div className="grab__nl-row">
+                    <span>{t("Follow links on")}</span>
+                    <b>{scopeLabel[nlParsed.scope]}</b>
+                  </div>
+                  <div className="grab__nl-row">
+                    <span>{t("Maximum pages")}</span>
+                    <b>{nlParsed.maxPages}</b>
+                  </div>
+                  <div className="grab__nl-row">
+                    <span>{t("Skip addresses containing")}</span>
+                    <b>{nlParsed.exclude.join(", ")}</b>
+                  </div>
+                  <button type="button" className="btn btn--primary" onClick={applyParsed}>
+                    {t("Use these rules")}
+                  </button>
+                </div>
+              )}
+            </Field>
             <Field label={t("Start page")} hint={t("Prism follows links from here according to the rules on the next step.")}>
               <TextField value={cfg.startUrl} onChange={(v) => set({ startUrl: v })} label={t("Start page")} icon="globe" mono placeholder="https://example.org/gallery/" autoFocus />
             </Field>

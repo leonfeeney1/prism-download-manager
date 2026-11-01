@@ -71,7 +71,7 @@ pub(crate) fn build_ctx(
         body: req.body.clone(),
         headers: base_headers(&req.headers, req.cookies.as_deref(), req.referer.as_deref())?,
         auth: AuthState::new(req.auth.clone()),
-        sources: Sources::new(url, final_url, &req.mirrors),
+        sources: Arc::new(Sources::new(url, final_url, &req.mirrors)),
         validators: Default::default(),
         probed: Default::default(),
         expect_file: req.expect_file,
@@ -129,7 +129,7 @@ async fn check_url(
     ctx: &Arc<HttpCtx>,
     url: &Url,
 ) -> Result<(Option<u64>, Option<String>, Url), EngineError> {
-    let mut f = HttpFetcher::new(ctx.clone(), u32::MAX);
+    let mut f = HttpFetcher::new(ctx.clone());
     let resp = f
         .send(url, Some((0, Some(1))), None)
         .await
@@ -176,6 +176,34 @@ impl UrlChanger for HttpUrlChanger {
             let mut m = self.job.meta();
             m.url = url;
             m.final_url = Some(final_url);
+            Ok(())
+        })
+    }
+
+    fn add_source(
+        &self,
+        url: Url,
+    ) -> Pin<Box<dyn std::future::Future<Output = Result<(), EngineError>> + Send + '_>> {
+        Box::pin(async move {
+            // Same-file guard, same as background mirror validation: the new source must
+            // answer ranges (`206`) for the exact size the primary reported. ETags are
+            // not compared (see `validate_mirror`): different servers legitimately report
+            // different ETags for identical bytes. A source that fails the guard is never
+            // added, so the download silently falls back to its existing sources.
+            let v = self.ctx.validators();
+            if !v.ranged {
+                return Err(EngineError::RangeNotSupported);
+            }
+            let (total, _etag, final_url) = check_url(&self.ctx, &url).await?;
+            if total != v.total {
+                return Err(EngineError::ValidatorMismatch);
+            }
+            self.ctx
+                .sources
+                .add_mirror(url, Some(final_url))
+                .ok_or_else(|| EngineError::InvalidUrl {
+                    message: "that address is already a source of this download".into(),
+                })?;
             Ok(())
         })
     }
@@ -252,6 +280,7 @@ pub(crate) async fn run(
     if ranged {
         spawn_mirror_validation(setup.ctx.clone(), job.clone());
     }
+    job.set_sources(setup.ctx.sources.clone());
     job.set_state(DownloadState::Downloading);
     let changer = HttpUrlChanger {
         ctx: setup.ctx.clone(),
@@ -338,7 +367,7 @@ async fn setup(
         p = engine.host_limits.acquire(&host) => p,
         _ = job.stop.cancelled() => return Err(stopped_error(job)),
     };
-    let mut fetcher = HttpFetcher::new(ctx.clone(), 0);
+    let mut fetcher = HttpFetcher::new(ctx.clone());
     let (min_request, _) = engine.request_sizes(req.max_request_size);
     match resume {
         Some(state) => {

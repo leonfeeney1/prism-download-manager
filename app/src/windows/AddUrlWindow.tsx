@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { TextField } from "../components/Controls";
+import { TextArea, TextField } from "../components/Controls";
 import { LogoMark } from "../components/LogoMark";
 import { WindowFrame } from "../components/WindowFrame";
 import { Icon } from "../design/icons";
@@ -14,6 +14,8 @@ export default function AddUrlWindow() {
   const [auth, setAuth] = useState(false);
   const [user, setUser] = useState("");
   const [pass, setPass] = useState("");
+  const [more, setMore] = useState(false);
+  const [sources, setSources] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -24,9 +26,7 @@ export default function AddUrlWindow() {
     });
   }, []);
 
-  // A Hugging Face model's name ("Qwen/Qwen3-8B") opens the model window.
-  const model = /^(datasets\/)?[A-Za-z0-9][\w-]*\/[\w.-]+$/.test(url.trim());
-  const valid = model || looksLikeUrl(url) || /^ftps?:\/\//i.test(url.trim());
+  const valid = looksLikeUrl(url) || /^ftps?:\/\//i.test(url.trim());
   const torrent = isTorrentLink(url);
 
   const submit = async () => {
@@ -34,9 +34,17 @@ export default function AddUrlWindow() {
     setBusy(true);
     setError("");
     try {
-      if (model) await api.openWindow("model", hexEncode(url.trim()));
-      else if (torrent) await api.openWindow("torrent", hexEncode(url.trim()));
-      else await api.addUrl({ url: url.trim(), username: auth ? user : undefined, password: auth ? pass : undefined });
+      if (torrent) await api.openWindow("torrent", hexEncode(url.trim()));
+      else {
+        // Extra addresses of the same file: each one is validated (same size, range
+        // support) when the download starts and then serves segments alongside the
+        // primary address; a rejected one is simply never used.
+        const mirrors = sources
+          .split("\n")
+          .map((s) => s.trim())
+          .filter((s) => s.length > 0);
+        await api.addUrl({ url: url.trim(), username: auth ? user : undefined, password: auth ? pass : undefined, mirrors: mirrors.length > 0 ? mirrors : undefined });
+      }
       await win.close();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -76,6 +84,12 @@ export default function AddUrlWindow() {
             <TextField value={user} onChange={setUser} label={t("User name")} placeholder={t("User name")} icon="user" />
             <TextField value={pass} onChange={setPass} label={t("Password")} placeholder={t("Password")} type="password" icon="key" onEnter={submit} />
           </div>
+        )}
+        <button type="button" className="disclose" aria-expanded={more} onClick={() => setMore(!more)}>
+          <Icon name={more ? "chevron-down" : "chevron-right"} size={12} strokeWidth={2.2} /> {t("More options")}
+        </button>
+        {more && (
+          <TextArea value={sources} onChange={setSources} label={t("Additional addresses (one per line)")} placeholder={t("https://… , ftp://… or magnet:?…")} rows={3} />
         )}
       </div>
       <footer className="dialog__footer">

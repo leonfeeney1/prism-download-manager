@@ -44,6 +44,19 @@ pub(crate) trait UrlChanger: Send + Sync {
         &self,
         url: Url,
     ) -> Pin<Box<dyn Future<Output = Result<(), EngineError>> + Send + '_>>;
+
+    /// Validates and adds a source to a running download. Protocols without live
+    /// sources keep the default (unsupported).
+    fn add_source(
+        &self,
+        _url: Url,
+    ) -> Pin<Box<dyn Future<Output = Result<(), EngineError>> + Send + '_>> {
+        Box::pin(async move {
+            Err(EngineError::Unsupported {
+                message: "adding a source to this download".into(),
+            })
+        })
+    }
 }
 
 /// Connection-count parameters.
@@ -207,6 +220,16 @@ pub(crate) async fn supervise<FF: FetcherFactory>(
             }
             _ = ctx.connected_notify.notified() => {}
             Some(cmd) = cmd_rx.recv() => match cmd {
+                Command::AddSource(url, reply) => {
+                    let result = match changer {
+                        Some(c) => tokio::select! {
+                            r = c.add_source(url.clone()) => r,
+                            _ = ctx.stop.cancelled() => Err(EngineError::Cancelled),
+                        },
+                        None => Err(EngineError::Unsupported { message: "adding a source to this download".into() }),
+                    };
+                    let _ = reply.send(result);
+                }
                 Command::SetConnections(n) => {
                     requested = usize::from(n).clamp(1, params.cap);
                     ramp = ramp.max(requested);

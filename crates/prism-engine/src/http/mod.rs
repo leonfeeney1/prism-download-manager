@@ -16,12 +16,14 @@ use url::Url;
 
 use crate::error::EngineError;
 use crate::request::HttpMethod;
-use crate::segmented::table::WorkerId;
 use auth::AuthState;
 use client::ClientSpec;
 
-/// How long a failing mirror is not used.
+/// How long a failing mirror is not used the first time; repeated failures back off
+/// exponentially (up to [`MAX_BENCH_STEPS`] doublings) so a dead source stops being retried
+/// every minute while a merely flaky one returns quickly.
 const MIRROR_BENCH: Duration = Duration::from_secs(60);
+const MAX_BENCH_STEPS: u32 = 4;
 
 /// Which source a URL came from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -36,6 +38,10 @@ struct Mirror {
     final_url: Option<Url>,
     validated: bool,
     benched_until: Option<Instant>,
+    /// Consecutive benchings without a successful request (drives the backoff).
+    bench_count: u32,
+    /// Range requests opened from this mirror.
+    requests: u64,
 }
 
 #[derive(Debug)]
@@ -43,10 +49,18 @@ struct SourcesInner {
     original: Url,
     final_url: Option<Url>,
     mirrors: Vec<Mirror>,
+    /// Next position in the rotation (primary, then validated mirrors in order).
+    cursor: usize,
+    /// Range requests opened from the primary.
+    primary_requests: u64,
 }
 
-/// Primary URL (+ its redirect target) and validated mirrors; workers are distributed over
-/// them round-robin.
+/// Primary URL (+ its redirect target) and validated mirrors. Every new request takes the
+/// next source in the rotation (primary, then validated mirrors in order), so one download
+/// pulls segments from all of its sources at once instead of pinning each connection to a
+/// single source. A source that never passed the same-file guard (same size, range support)
+/// is never picked, and a failing mirror is benched with growing backoff while its segments
+/// are reassigned to the remaining sources.
 #[derive(Debug)]
 pub(crate) struct Sources {
     inner: Mutex<SourcesInner>,
@@ -65,8 +79,12 @@ impl Sources {
                         final_url: None,
                         validated: false,
                         benched_until: None,
+                        bench_count: 0,
+                        requests: 0,
                     })
                     .collect(),
+                cursor: 0,
+                primary_requests: 0,
             }),
         }
     }
@@ -75,9 +93,11 @@ impl Sources {
         self.inner.lock().expect("sources lock")
     }
 
-    /// Picks the source for a worker: `(source, url, url_is_redirect_target)`.
-    pub(crate) fn pick(&self, worker: WorkerId) -> (SourceRef, Url, bool) {
-        let g = self.lock();
+    /// Picks the source for the next request: `(source, url, url_is_redirect_target)`.
+    /// Round-robin over the primary and every usable mirror, so with N sources and enough
+    /// requests each one serves segments — even with fewer connections than sources.
+    pub(crate) fn pick_next(&self) -> (SourceRef, Url, bool) {
+        let mut g = self.lock();
         let now = Instant::now();
         let usable: Vec<usize> = g
             .mirrors
@@ -86,20 +106,71 @@ impl Sources {
             .filter(|(_, m)| m.validated && m.benched_until.is_none_or(|t| now >= t))
             .map(|(i, _)| i)
             .collect();
-        let slot = worker as usize % (usable.len() + 1);
+        let slot = g.cursor % (usable.len() + 1);
+        g.cursor = g.cursor.wrapping_add(1);
         if slot == 0 {
+            g.primary_requests += 1;
             match &g.final_url {
                 Some(f) => (SourceRef::Primary, f.clone(), true),
                 None => (SourceRef::Primary, g.original.clone(), false),
             }
         } else {
             let i = usable[slot - 1];
-            let m = &g.mirrors[i];
+            let m = &mut g.mirrors[i];
+            m.requests += 1;
             match &m.final_url {
                 Some(f) => (SourceRef::Mirror(i), f.clone(), true),
                 None => (SourceRef::Mirror(i), m.url.clone(), false),
             }
         }
+    }
+
+    /// Adds a source that the caller already validated (same size, range support).
+    /// Returns its index, or `None` when the URL is already listed (primary, redirect
+    /// target, or an existing mirror).
+    pub(crate) fn add_mirror(&self, url: Url, final_url: Option<Url>) -> Option<usize> {
+        let mut g = self.lock();
+        let known = |u: &Url| {
+            *u == g.original
+                || g.final_url.as_ref() == Some(u)
+                || g.mirrors.iter().any(|m| m.url == *u || m.final_url.as_ref() == Some(u))
+        };
+        if known(&url) || final_url.as_ref().is_some_and(|f| known(f)) {
+            return None;
+        }
+        let idx = g.mirrors.len();
+        // A redirect target equal to the source URL itself carries no information.
+        let final_url = final_url.filter(|f| *f != url);
+        g.mirrors.push(Mirror {
+            url,
+            final_url,
+            validated: true,
+            benched_until: None,
+            bench_count: 0,
+            requests: 0,
+        });
+        Some(idx)
+    }
+
+    /// Live view of every source, primary first, for progress reporting.
+    pub(crate) fn snapshot(&self) -> Vec<crate::progress::SourceInfo> {
+        let g = self.lock();
+        let now = Instant::now();
+        let mut out = vec![crate::progress::SourceInfo {
+            url: g.original.clone(),
+            primary: true,
+            validated: true,
+            benched: false,
+            requests: g.primary_requests,
+        }];
+        out.extend(g.mirrors.iter().map(|m| crate::progress::SourceInfo {
+            url: m.url.clone(),
+            primary: false,
+            validated: m.validated,
+            benched: m.benched_until.is_some_and(|t| now < t),
+            requests: m.requests,
+        }));
+        out
     }
 
     pub(crate) fn original(&self) -> Url {
@@ -142,16 +213,34 @@ impl Sources {
         }
     }
 
-    /// Takes a failing mirror out of rotation for a while.
+    /// Takes a failing mirror out of rotation, with growing backoff for repeated
+    /// failures (60 s, 2 min, 4 min, 8 min, 16 min cap). Its in-flight segments are
+    /// reassigned on retry because the rotation simply skips benched sources.
     pub(crate) fn bench(&self, src: SourceRef) {
         if let SourceRef::Mirror(i) = src
             && let Some(m) = self.lock().mirrors.get_mut(i)
         {
-            m.benched_until = Some(Instant::now() + MIRROR_BENCH);
+            m.bench_count = m.bench_count.saturating_add(1);
+            let steps = m.bench_count.saturating_sub(1).min(MAX_BENCH_STEPS);
+            let backoff = MIRROR_BENCH.saturating_mul(1 << steps);
+            m.benched_until = Some(Instant::now() + backoff);
         }
     }
 
-    /// Marks a mirror as validated (same size as the primary).
+    /// A request from this mirror succeeded: its failure streak resets, so a recovered
+    /// source is not punished for old failures.
+    pub(crate) fn mark_ok(&self, src: SourceRef) {
+        if let SourceRef::Mirror(i) = src
+            && let Some(m) = self.lock().mirrors.get_mut(i)
+        {
+            m.bench_count = 0;
+        }
+    }
+
+    /// Marks a mirror as validated (same size and range support as the primary).
+    /// Note: ETags are deliberately NOT compared across sources — different servers
+    /// legitimately report different ETags for identical bytes, so the guard is size
+    /// plus a `206` range answer, never ETag equality.
     pub(crate) fn validate_mirror(&self, i: usize, final_url: Option<Url>) {
         if let Some(m) = self.lock().mirrors.get_mut(i) {
             m.validated = true;
@@ -195,7 +284,7 @@ pub(crate) struct HttpCtx {
     pub body: Option<String>,
     pub headers: HeaderMap,
     pub auth: AuthState,
-    pub sources: Sources,
+    pub sources: Arc<Sources>,
     pub validators: Mutex<Validators>,
     /// A successful response was received (403/410 afterwards mean an expired link).
     pub probed: AtomicBool,
@@ -365,18 +454,55 @@ mod tests {
 
         let p = Url::parse("http://p/a").unwrap();
         let m = Url::parse("http://m/a").unwrap();
+        let m2 = Url::parse("http://m2/a").unwrap();
         let s = Sources::new(p.clone(), None, std::slice::from_ref(&m));
-        // Unvalidated mirrors are not used.
-        assert_eq!(s.pick(1).0, SourceRef::Primary);
+        // Unvalidated mirrors are not used: every pick is the primary.
+        assert_eq!(s.pick_next().0, SourceRef::Primary);
+        assert_eq!(s.pick_next().0, SourceRef::Primary);
+        let s = Sources::new(p.clone(), None, &[m.clone(), m2.clone()]);
         s.validate_mirror(0, None);
-        assert_eq!(s.pick(0).0, SourceRef::Primary);
-        assert_eq!(s.pick(1), (SourceRef::Mirror(0), m.clone(), false));
+        s.validate_mirror(1, None);
+        // Round-robin over primary + both mirrors, regardless of caller.
+        assert_eq!(s.pick_next(), (SourceRef::Primary, p.clone(), false));
+        assert_eq!(s.pick_next(), (SourceRef::Mirror(0), m.clone(), false));
+        assert_eq!(s.pick_next(), (SourceRef::Mirror(1), m2.clone(), false));
+        assert_eq!(s.pick_next(), (SourceRef::Primary, p.clone(), false));
+        // A benched mirror is skipped (and its backoff grows on repeated benching).
         s.bench(SourceRef::Mirror(0));
-        assert_eq!(s.pick(1).0, SourceRef::Primary);
+        assert_eq!(s.pick_next().0, SourceRef::Primary);
+        assert_eq!(s.pick_next().0, SourceRef::Mirror(1));
+        // A successful request resets the failure streak.
+        s.mark_ok(SourceRef::Mirror(0));
+        let snap = s.snapshot();
+        assert_eq!(snap.len(), 3);
+        assert!(snap[0].primary && snap[0].requests >= 2);
+        assert_eq!(snap[1].url, m);
+        assert!(snap[1].benched);
+        assert!(snap[2].requests >= 1);
+        // Live-added sources join validated; duplicates are refused.
+        let added = Url::parse("http://m3/a").unwrap();
+        assert_eq!(s.add_mirror(added.clone(), None), Some(2));
+        assert_eq!(s.add_mirror(added.clone(), None), None);
+        assert_eq!(s.add_mirror(p.clone(), None), None);
+        assert_eq!(s.snapshot().len(), 4);
         let f = Url::parse("http://cdn/a?sig=1").unwrap();
         s.on_redirected(SourceRef::Primary, &f);
-        assert_eq!(s.pick(0), (SourceRef::Primary, f, true));
+        // The redirect target is the primary's URL now, wherever it falls in rotation.
+        let mut saw_final = false;
+        for _ in 0..8 {
+            if s.pick_next() == (SourceRef::Primary, f.clone(), true) {
+                saw_final = true;
+            }
+        }
+        assert!(saw_final);
         s.drop_final(SourceRef::Primary);
-        assert_eq!(s.pick(0), (SourceRef::Primary, p, false));
+        // After dropping the redirect target the primary serves its original URL again.
+        let mut saw_original = false;
+        for _ in 0..8 {
+            if s.pick_next() == (SourceRef::Primary, p.clone(), false) {
+                saw_original = true;
+            }
+        }
+        assert!(saw_original);
     }
 }

@@ -413,6 +413,12 @@ pub struct OutputOptions {
     pub sub_langs: Vec<String>,
     /// Also consider automatic captions when no manual subtitle matches.
     pub auto_subtitles: bool,
+    /// Satisfy `sub_langs` with the platform's own translated subtitles
+    /// (automatic captions in the requested language) when no manual
+    /// subtitle exists in that language. No API key, no paid service, no
+    /// downloaded model: only tracks the platform itself offers. The
+    /// untranslated `<lang>-orig` track never counts as a translation.
+    pub translate_subtitles: bool,
     /// Keep subtitle files next to the output.
     pub write_subtitles: bool,
     pub embed_thumbnail: bool,
@@ -436,6 +442,7 @@ impl Default for OutputOptions {
             embed_subtitles: false,
             sub_langs: vec!["en".into()],
             auto_subtitles: false,
+            translate_subtitles: false,
             write_subtitles: false,
             embed_thumbnail: true,
             write_thumbnail: false,

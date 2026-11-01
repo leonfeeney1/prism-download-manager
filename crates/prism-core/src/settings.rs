@@ -20,27 +20,13 @@ pub struct Settings {
     pub sounds: Sounds,
     pub clipboard: Clipboard,
     pub grabber: Grabber,
+    pub lan: Lan,
     pub antivirus: Antivirus,
     pub video: Video,
-    pub hugging_face: HuggingFace,
     pub shortcuts: BTreeMap<String, String>,
     pub onboarding_done: bool,
     /// The app version whose "What's new" the user has seen ("" before 1.1.0).
     pub last_seen_version: String,
-}
-
-/// Downloading models from Hugging Face (see `crate::huggingface`).
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
-#[serde(default, rename_all = "camelCase")]
-pub struct HuggingFace {
-    /// The server: "" = `HF_ENDPOINT` if it is set, else huggingface.co. Otherwise a URL like
-    /// `https://hf-mirror.com`.
-    pub endpoint: String,
-    /// Access token for gated and private models ("" = the one `hf auth login` saved, if any).
-    /// Sent only to the server above, never to the download servers it redirects to.
-    pub token: String,
-    /// Where models go, each in `<owner>/<name>` below it ("" = `Models` in the download folder).
-    pub folder: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -178,6 +164,10 @@ pub struct Downloads {
     pub verify_checksums: bool,
     /// Start downloads added from the browser immediately when no dialog is shown.
     pub auto_start: bool,
+    /// Extract finished archives automatically into a folder next to the file,
+    /// inside its category folder when category folders are on; files sitting
+    /// loose in the download folder move into their category folder.
+    pub auto_extract: bool,
 }
 
 impl Default for Downloads {
@@ -193,6 +183,7 @@ impl Default for Downloads {
             speed_limiter_enabled: false,
             verify_checksums: true,
             auto_start: true,
+            auto_extract: true,
         }
     }
 }
@@ -387,6 +378,25 @@ impl Default for Grabber {
     }
 }
 
+/// LAN sharing (off by default): serve completed, user-shared downloads to
+/// other devices on the local network. The port is configurable; the address is
+/// the machine's LAN address, resolved when the server starts.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(default, rename_all = "camelCase")]
+pub struct Lan {
+    pub enabled: bool,
+    pub port: u16,
+}
+
+impl Default for Lan {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            port: 8421,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum AntivirusKind {
@@ -431,6 +441,9 @@ pub struct Video {
     pub audio_format: String,
     pub embed_subtitles: bool,
     pub subtitle_langs: String,
+    /// Satisfy `subtitle_langs` with the platform's own translated
+    /// subtitles when no manual subtitle exists in that language.
+    pub translate_subtitles: bool,
     pub embed_thumbnail: bool,
     pub embed_metadata: bool,
     pub embed_chapters: bool,
@@ -455,6 +468,7 @@ impl Default for Video {
             audio_format: "m4a".into(),
             embed_subtitles: false,
             subtitle_langs: "en.*".into(),
+            translate_subtitles: false,
             embed_thumbnail: true,
             embed_metadata: true,
             embed_chapters: true,

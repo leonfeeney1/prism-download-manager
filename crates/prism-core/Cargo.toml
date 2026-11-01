@@ -38,6 +38,11 @@ fs4 = { version = "1.1", features = ["sync"] }
 zip = { version = "9", default-features = false, features = ["deflate"] }
 # Unpacking single files of a ZIP as they arrive ("What's inside"): the zip crate's own inflater.
 flate2 = { version = "1.1", default-features = false, features = ["zlib-rs"] }
+# Auto-extract of finished downloads: tar archives (gzip via flate2 above, xz via lzma-rust2).
+# Both crates are already in the workspace's lockfile (prism-video), so this adds no new
+# dependency family; 7z is deliberately not supported (no 7z crate in the tree).
+tar = "0.4"
+lzma-rust2 = { version = "0.22", default-features = false, features = ["std", "xz", "optimization"] }
 crc32fast = "1.5"
 
 [target.'cfg(windows)'.dependencies]
@@ -51,3 +56,5 @@ objc2-foundation = { version = "0.3", default-features = false, features = ["std
 [dev-dependencies]
 tempfile = { workspace = true }
 prism-testserver = { path = "../prism-testserver" }
+# Building test archives for the auto-extract tests (same version as the lib dep).
+zip = { version = "9", default-features = false, features = ["deflate"] }

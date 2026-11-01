@@ -43,6 +43,29 @@ pub async fn toggle_speed_limiter(core: State<'_, Core>, app: AppHandle) -> CmdR
     Ok(on)
 }
 
+// ----- LAN sharing --------------------------------------------------------------------------
+
+#[tauri::command]
+pub async fn lan_status(core: State<'_, Core>) -> CmdResult<prism_core::lan::LanStatus> {
+    Ok(core.lan_status())
+}
+
+#[tauri::command]
+pub async fn set_lan_enabled(
+    core: State<'_, Core>,
+    enabled: bool,
+) -> CmdResult<prism_core::lan::LanStatus> {
+    core.set_lan_enabled(enabled).await.map_err(err)
+}
+
+#[tauri::command]
+pub async fn set_lan_port(
+    core: State<'_, Core>,
+    port: u16,
+) -> CmdResult<prism_core::lan::LanStatus> {
+    core.set_lan_port(port).await.map_err(err)
+}
+
 // ----- adding downloads ---------------------------------------------------------------------
 
 #[derive(Deserialize)]
@@ -53,6 +76,7 @@ pub struct AddUrlArgs {
     username: Option<String>,
     password: Option<String>,
     file_name: Option<String>,
+    mirrors: Option<Vec<String>>,
 }
 
 /// Open the "Download File" dialog for a URL typed or pasted by the user.
@@ -71,6 +95,7 @@ pub async fn add_url(core: State<'_, Core>, args: AddUrlArgs) -> CmdResult<Captu
         username: args.username.filter(|u| !u.is_empty()),
         password: args.password,
         file_name: args.file_name.filter(|f| !f.is_empty()),
+        mirrors: args.mirrors.unwrap_or_default(),
         ..Default::default()
     };
     Ok(core.capture(n, CaptureSource::Manual))
@@ -259,65 +284,12 @@ pub async fn cancel_zip_file(core: State<'_, Core>, id: String, index: u32) -> C
     Ok(())
 }
 
-// ----- Hugging Face models (#29) ------------------------------------------------------------
+// ----- Native window material ------------------------------------------------------------
 
 /// Whether the OS puts a material (Mica / vibrancy) behind the window (see main.rs).
 #[tauri::command]
 pub fn native_material() -> bool {
     crate::native_material_supported()
-}
-
-#[tauri::command]
-pub async fn hf_context(core: State<'_, Core>) -> CmdResult<prism_core::huggingface::Context> {
-    Ok(core.hf_context())
-}
-
-/// Errors are codes the window explains (`hf:notFound`, `hf:needsToken`, …).
-#[tauri::command]
-pub async fn hf_repo(
-    core: State<'_, Core>,
-    input: String,
-) -> CmdResult<prism_core::huggingface::Repo> {
-    core.hf_repo(&input).await.map_err(err)
-}
-
-#[tauri::command]
-pub async fn hf_search(
-    core: State<'_, Core>,
-    query: String,
-) -> CmdResult<Vec<prism_core::huggingface::Hit>> {
-    core.hf_search(&query).await.map_err(err)
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct HfPresentArgs {
-    kind: prism_core::huggingface::RepoKind,
-    id: String,
-    sha: String,
-    folder: PathBuf,
-    files: Vec<prism_core::huggingface::RepoFile>,
-}
-
-#[tauri::command]
-pub async fn hf_present(
-    core: State<'_, Core>,
-    args: HfPresentArgs,
-) -> CmdResult<prism_core::huggingface::Present> {
-    let core = core.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || {
-        core.hf_present(args.kind, &args.id, &args.sha, &args.folder, &args.files)
-    })
-    .await
-    .map_err(err)
-}
-
-#[tauri::command]
-pub async fn hf_add(
-    core: State<'_, Core>,
-    args: prism_core::huggingface::AddModel,
-) -> CmdResult<usize> {
-    core.hf_add(args).map_err(err)
 }
 
 // ----- Tools: convert, make smaller, ZIP -----------------------------------------------------
@@ -470,6 +442,24 @@ pub async fn item_details(core: State<'_, Core>, id: String) -> CmdResult<Option
 }
 
 #[tauri::command]
+pub async fn add_source(
+    core: State<'_, Core>,
+    id: String,
+    url: String,
+) -> CmdResult<DownloadItem> {
+    core.add_source(&id, &url).await.map_err(err)
+}
+
+/// Extract a finished archive on demand (the item menu's "Extract").
+#[tauri::command]
+pub async fn extract_download(
+    core: State<'_, Core>,
+    id: String,
+) -> CmdResult<DownloadItem> {
+    core.extract_download(&id).await.map_err(err)
+}
+
+#[tauri::command]
 pub async fn open_item(core: State<'_, Core>, app: AppHandle, id: String) -> CmdResult<()> {
     let item = core.item(&id).ok_or("unknown item")?;
     app.opener()
@@ -587,6 +577,13 @@ pub async fn start_grabber(
     config: GrabberConfig,
 ) -> CmdResult<GrabberProject> {
     core.start_grabber(project_id, name, config).map_err(err)
+}
+
+/// Parse one plain-English sentence into a grabber config for review.
+/// Local and rule-based (see `prism_core::nl_grabber`); never starts a crawl.
+#[tauri::command]
+pub async fn parse_grabber_sentence(sentence: String) -> CmdResult<GrabberConfig> {
+    prism_core::nl_grabber::parse_natural_grabber(&sentence).map_err(err)
 }
 
 #[tauri::command]

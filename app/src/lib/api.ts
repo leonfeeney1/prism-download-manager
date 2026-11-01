@@ -13,6 +13,7 @@ import type {
   GrabberConfig,
   GrabberProject,
   ItemDetails,
+  LanStatus,
   Queue,
   Settings,
   SniffedStream,
@@ -87,6 +88,7 @@ export interface ItemPatch {
   checksum?: string | null;
   username?: string;
   password?: string;
+  lanShared?: boolean;
 }
 
 export interface VideoDecision {
@@ -122,61 +124,12 @@ export interface TorrentMeta {
 
 export type TorrentSource = { type: "url"; value: string } | { type: "file"; value: string };
 
-/** A model (or dataset) on Hugging Face and its files (#29). */
-export type HfKind = "model" | "dataset";
-export interface HfFile {
-  path: string;
-  size: number;
-  sha256?: string | null;
-}
-export interface HfVariant {
-  label: string;
-  files: string[];
-  size: number;
-}
-export interface HfRepo {
-  kind: HfKind;
-  id: string;
-  sha: string;
-  revision: string;
-  gated: boolean;
-  private: boolean;
-  downloads?: number | null;
-  likes?: number | null;
-  pipelineTag?: string | null;
-  library?: string | null;
-  gguf: boolean;
-  files: HfFile[];
-  path?: string | null;
-  pageUrl: string;
-  folder: string;
-  suggestion: { variants: HfVariant[]; variant?: string | null; extras: string[]; files: string[] };
-}
-export interface HfHit {
-  id: string;
-  downloads?: number | null;
-  likes?: number | null;
-  pipelineTag?: string | null;
-  gguf: boolean;
-  gated: boolean;
-}
-export interface HfContext {
-  endpoint: string;
-  token?: "settings" | "environment" | "login" | null;
-  folder: string;
-  lmStudio?: string | null;
-}
-export interface HfPresent {
-  onDisk: string[];
-  listed: string[];
-}
-
 export const api = {
   bootstrap: () => invoke<Bootstrap>("bootstrap"),
   updateSettings: (patch: unknown) => invoke<Settings>("update_settings", { patch }),
   toggleSpeedLimiter: () => invoke<boolean>("toggle_speed_limiter"),
 
-  addUrl: (args: { url: string; referer?: string; username?: string; password?: string; fileName?: string }) =>
+  addUrl: (args: { url: string; referer?: string; username?: string; password?: string; fileName?: string; mirrors?: string[] }) =>
     invoke<CaptureInfo>("add_url", { args }),
   getCapture: (id: string) => invoke<CaptureInfo | null>("get_capture", { id }),
   confirmCapture: (decision: CaptureDecision) => invoke<DownloadItem>("confirm_capture", { decision }),
@@ -206,13 +159,6 @@ export const api = {
 
   inspectTorrent: (source: TorrentSource) => invoke<TorrentMeta>("inspect_torrent", { source }),
   readTorrentFile: (path: string) => invoke<TorrentSource>("read_torrent_file", { path }),
-  hfContext: () => invoke<HfContext>("hf_context"),
-  /** Rejects with a code: `hf:notFound`, `hf:needsToken`, `hf:badToken`, `hf:gated`, `hf:rateLimited`, `hf:server`, `hf:network`. */
-  hfRepo: (input: string) => invoke<HfRepo>("hf_repo", { input }),
-  hfSearch: (query: string) => invoke<HfHit[]>("hf_search", { query }),
-  hfPresent: (args: { kind: HfKind; id: string; sha: string; folder: string; files: HfFile[] }) => invoke<HfPresent>("hf_present", { args }),
-  /** `mode` null: the "Hugging Face" queue, started. */
-  hfAdd: (args: { kind: HfKind; id: string; sha: string; files: HfFile[]; folder: string; mode: StartMode | null }) => invoke<number>("hf_add", { args }),
   /** Tools: read files (ffmpeg is downloaded first if there's none; `toolsProgress` events). */
   mediaInspect: (paths: string[]) => invoke<MediaFile[]>("media_inspect", { paths }),
   /** Tools: the "Make smaller" estimate for each file (no work done). */
@@ -249,6 +195,11 @@ export const api = {
   redownload: (id: string) => invoke<void>("redownload", { id }),
   updateItem: (id: string, patch: ItemPatch) => invoke<DownloadItem>("update_item", { id, patch }),
   itemDetails: (id: string) => invoke<ItemDetails | null>("item_details", { id }),
+  addSource: (id: string, url: string) => invoke<DownloadItem>("add_source", { id, url }),
+  extractItem: (id: string) => invoke<DownloadItem>("extract_download", { id }),
+  lanStatus: () => invoke<LanStatus>("lan_status"),
+  setLanEnabled: (enabled: boolean) => invoke<LanStatus>("set_lan_enabled", { enabled }),
+  setLanPort: (port: number) => invoke<LanStatus>("set_lan_port", { port }),
   openItem: (id: string) => invoke<void>("open_item", { id }),
   revealItem: (id: string) => invoke<void>("reveal_item", { id }),
   /** Shows a file selected in its folder. */
@@ -278,6 +229,8 @@ export const api = {
   grabberProjects: () => invoke<GrabberProject[]>("grabber_projects"),
   startGrabber: (projectId: string | null, name: string, config: GrabberConfig) =>
     invoke<GrabberProject>("start_grabber", { projectId, name, config }),
+  parseGrabberSentence: (sentence: string) =>
+    invoke<GrabberConfig>("parse_grabber_sentence", { sentence }),
   stopGrabber: (projectId: string) => invoke<void>("stop_grabber", { projectId }),
   deleteGrabberProject: (projectId: string) => invoke<void>("delete_grabber_project", { projectId }),
   downloadGrabbed: (projectId: string, urls: string[], saveDir: string | null, keepStructure: boolean) =>
@@ -443,6 +396,7 @@ export interface VideoOutputOptions {
   audioFormat?: "mp3" | "m4a" | "opus" | "flac" | "wav";
   embedSubtitles?: boolean;
   subLangs?: string[];
+  translateSubtitles?: boolean;
   autoSubtitles?: boolean;
   writeSubtitles?: boolean;
   embedThumbnail?: boolean;

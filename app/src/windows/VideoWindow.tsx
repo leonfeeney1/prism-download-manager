@@ -63,6 +63,7 @@ export default function VideoWindow({ id }: { id: string }) {
   const [entries, setEntries] = useState<Set<string>>(new Set());
   const [subs, setSubs] = useState(settings?.video.embedSubtitles ?? false);
   const [langs, setLangs] = useState(settings?.video.subtitleLangs ?? "en.*");
+  const [translateSubs, setTranslateSubs] = useState(settings?.video.translateSubtitles ?? false);
   const [thumb, setThumb] = useState(settings?.video.embedThumbnail ?? true);
   const [meta, setMeta] = useState(settings?.video.embedMetadata ?? true);
   const [embedChapters, setEmbedChapters] = useState(settings?.video.embedChapters ?? true);
@@ -146,6 +147,7 @@ export default function VideoWindow({ id }: { id: string }) {
           audioFormat: "mp3",
           embedSubtitles: subs,
           subLangs: langs.split(/[\s,]+/).filter(Boolean),
+          translateSubtitles: translateSubs,
           embedThumbnail: thumb,
           embedMetadata: meta,
           embedChapters,
@@ -292,6 +294,7 @@ export default function VideoWindow({ id }: { id: string }) {
               <div className="inline">
                 {subs && <TextField value={langs} onChange={setLangs} label={t("Subtitle languages")} mono />}
                 <Switch checked={subs} label={t("Embed subtitles")} onChange={setSubs} />
+                {subs && <Switch checked={translateSubs} label={t("Translate subtitles")} onChange={setTranslateSubs} />}
               </div>
             </div>
             <div className="vopt">

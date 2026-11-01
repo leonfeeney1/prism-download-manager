@@ -685,6 +685,150 @@ async fn mirrors_are_validated_and_used() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn multi_source_rotation_uses_every_source_with_fewer_connections() {
+    // Two connections, three sources: worker-pinned assignment could only ever use two
+    // sources, but per-request round-robin must serve segments from all three.
+    let srv = default_server().await;
+    let dir = tempfile::tempdir().unwrap();
+    let size = 16 * MIB;
+    let q = format!("size={size}&seed=31&throttle=2M");
+    let mut req = request(&srv.url(&format!("/file/ms-primary.bin?{q}")), dir.path(), 2);
+    req.max_request_size = Some(512 * 1024);
+    req.mirrors = vec![
+        Url::parse(&srv.url(&format!("/file/ms-m1.bin?{q}"))).unwrap(),
+        Url::parse(&srv.url(&format!("/file/ms-m2.bin?{q}"))).unwrap(),
+    ];
+    let h = engine().start(req, None, vec![]);
+    let done = wait(&h, 60).await.unwrap();
+    assert_eq!(sha256_file(&done.path), expected_sha256(31, size));
+    let stats = srv.stats();
+    let ranged = |p: &str| {
+        stats
+            .requests
+            .iter()
+            .filter(|r| r.uri.starts_with(p) && r.range.as_deref() != Some("bytes=0-0"))
+            .count()
+    };
+    assert!(ranged("/file/ms-primary.bin") >= 1, "primary unused");
+    assert!(ranged("/file/ms-m1.bin") >= 1, "mirror 1 unused");
+    assert!(ranged("/file/ms-m2.bin") >= 1, "mirror 2 unused");
+    let snap = h.snapshot();
+    assert_eq!(snap.sources.len(), 3);
+    assert!(snap.sources.iter().all(|s| s.validated));
+    assert!(
+        snap.sources.iter().all(|s| s.requests >= 1),
+        "source without requests: {:?}",
+        snap.sources
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn multi_source_dead_mirror_segments_are_reassigned() {
+    // The mirror validates (its 1-byte probe fits under drop_after) but drops every data
+    // response after 1 KiB. The download must still finish byte-exact from the primary.
+    let srv = default_server().await;
+    let dir = tempfile::tempdir().unwrap();
+    let size = 8 * MIB;
+    let mut req = request(
+        &srv.url(&format!("/file/dm-primary.bin?size={size}&seed=32")),
+        dir.path(),
+        4,
+    );
+    req.max_request_size = Some(512 * 1024);
+    req.mirrors = vec![
+        Url::parse(&srv.url(&format!(
+            "/file/dm-mirror.bin?size={size}&seed=32&drop_after=1024"
+        )))
+        .unwrap(),
+    ];
+    let h = engine().start(req, None, vec![]);
+    let done = wait(&h, 60).await.unwrap();
+    assert_eq!(sha256_file(&done.path), expected_sha256(32, size));
+    let stats = srv.stats();
+    let ranged = |p: &str| {
+        stats
+            .requests
+            .iter()
+            .filter(|r| r.uri.starts_with(p) && r.range.as_deref() != Some("bytes=0-0"))
+            .count()
+    };
+    assert!(ranged("/file/dm-mirror.bin") >= 1, "mirror never tried");
+    assert!(ranged("/file/dm-primary.bin") >= 1, "primary unused");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn multi_source_wrong_size_mirror_falls_back_to_primary() {
+    // Same-file guard: a mirror reporting a different size is never used, and the
+    // download finishes from the primary alone.
+    let srv = default_server().await;
+    let dir = tempfile::tempdir().unwrap();
+    let size = 8 * MIB;
+    let mut req = request(
+        &srv.url(&format!("/file/ws-primary.bin?size={size}&seed=33")),
+        dir.path(),
+        4,
+    );
+    req.max_request_size = Some(512 * 1024);
+    req.mirrors = vec![
+        Url::parse(&srv.url(&format!("/file/ws-mirror.bin?size={}&seed=33", size / 2)))
+            .unwrap(),
+    ];
+    let h = engine().start(req, None, vec![]);
+    let done = wait(&h, 60).await.unwrap();
+    assert_eq!(sha256_file(&done.path), expected_sha256(33, size));
+    let stats = srv.stats();
+    assert_eq!(
+        stats
+            .requests
+            .iter()
+            .filter(|r| r.uri.starts_with("/file/ws-mirror.bin")
+                && r.range.as_deref() != Some("bytes=0-0"))
+            .count(),
+        0,
+        "wrong-size mirror used"
+    );
+    let snap = h.snapshot();
+    assert_eq!(snap.sources.len(), 2);
+    assert!(!snap.sources[1].validated);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn multi_source_added_live_while_downloading() {
+    let srv = default_server().await;
+    let dir = tempfile::tempdir().unwrap();
+    let size = 16 * MIB;
+    let mut req = request(
+        &srv.url(&format!(
+            "/file/la-primary.bin?size={size}&seed=34&throttle=1M"
+        )),
+        dir.path(),
+        4,
+    );
+    req.max_request_size = Some(512 * 1024);
+    let h = engine().start(req, None, vec![]);
+    wait_for_progress(&h, MIB).await;
+    let mirror = Url::parse(&srv.url(&format!("/file/la-mirror.bin?size={size}&seed=34"))).unwrap();
+    h.add_source(mirror.clone()).await.unwrap();
+    // Adding the same address twice is refused.
+    assert!(h.add_source(mirror).await.is_err());
+    let done = wait(&h, 60).await.unwrap();
+    assert_eq!(sha256_file(&done.path), expected_sha256(34, size));
+    let stats = srv.stats();
+    assert!(
+        stats
+            .requests
+            .iter()
+            .any(|r| r.uri.starts_with("/file/la-mirror.bin")
+                && r.range.as_deref() != Some("bytes=0-0")),
+        "live-added mirror never served data"
+    );
+    let snap = h.snapshot();
+    assert_eq!(snap.sources.len(), 2);
+    assert!(snap.sources[1].validated);
+    assert!(snap.sources[1].requests >= 1);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn speed_limit_is_respected_and_live_adjustable() {
     let srv = default_server().await;
     let dir = tempfile::tempdir().unwrap();

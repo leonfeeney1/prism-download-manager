@@ -43,10 +43,6 @@ describe("route", () => {
     expect(parseRoute(`#/torrent/${hexEncode("magnet:?xt=urn:btih:abc")}`)).toEqual({ name: "torrent", source: "magnet:?xt=urn:btih:abc" });
     expect(hexDecode("not-hex")).toBe("not-hex");
   });
-  it("opens the model window with a name or link, or empty to search", () => {
-    expect(parseRoute(`#/model/${hexEncode("https://huggingface.co/Qwen/Qwen3-8B")}`)).toEqual({ name: "model", source: "https://huggingface.co/Qwen/Qwen3-8B" });
-    expect(parseRoute("#/model")).toEqual({ name: "model", source: "" });
-  });
 });
 
 describe("selection", () => {

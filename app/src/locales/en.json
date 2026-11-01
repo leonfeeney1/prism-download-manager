@@ -90,5 +90,24 @@
   "{count} downloads and their files will be deleted. The files can't be restored.": {
     "one": "{count} download and its file will be deleted. The file can't be restored.",
     "other": "{count} downloads and their files will be deleted. The files can't be restored."
-  }
+  },
+  "{count} requests": {
+    "one": "{count} request",
+    "other": "{count} requests"
+  },
+  "LAN sharing": "LAN sharing",
+  "Share on the local network": "Share on the local network",
+  "Other devices on your local network can fetch completed downloads you mark shared. Off by default; nothing is shared until you turn this on and mark files.": "Other devices on your local network can fetch completed downloads you mark shared. Off by default; nothing is shared until you turn this on and mark files.",
+  "Port": "Port",
+  "LAN address": "LAN address",
+  "Share on LAN": "Share on LAN",
+  "Stop sharing": "Stop sharing",
+  "Could not change LAN sharing": "Could not change LAN sharing",
+  "Could not change the LAN port": "Could not change the LAN port",
+  "Could not stop sharing": "Could not stop sharing",
+  "Could not share on the LAN": "Could not share on the LAN",
+  "Describe what to grab": "Describe what to grab",
+  "Write it in plain English, for example: download all PDFs from example.com. Nothing starts until you check the rules below.": "Write it in plain English, for example: download all PDFs from example.com. Nothing starts until you check the rules below.",
+  "Parse": "Parse",
+  "Use these rules": "Use these rules"
 }
