@@ -157,7 +157,7 @@ async fn add_source_to_idle_item_persists_and_is_used_on_start() {
     assert!(core.add_source(&id, &mirror).await.is_err());
     assert!(core.add_source(&id, "not a url").await.is_err());
     assert_eq!(core.item(&id).unwrap().mirrors.len(), 1);
-    core.start_items(&[id.clone()]);
+    core.start_items(std::slice::from_ref(&id));
     let path = wait_completed(&mut rx, &id).await;
     assert_eq!(sha256_file(&path), expected_sha256(41, size));
 }
@@ -1283,7 +1283,7 @@ async fn organize_moves_loose_file_into_category_folder() {
         "downloads": {"useCategoryFolders": true},
     }))
     .unwrap();
-    core.start_items(&[id.clone()]);
+    core.start_items(std::slice::from_ref(&id));
     let path = wait_completed(&mut rx, &id).await;
     // The organize pass moves it into its category folder after completion.
     let moved = tokio::time::timeout(Duration::from_secs(30), async {

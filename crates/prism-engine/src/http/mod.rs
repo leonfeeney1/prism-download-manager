@@ -135,7 +135,7 @@ impl Sources {
                 || g.final_url.as_ref() == Some(u)
                 || g.mirrors.iter().any(|m| m.url == *u || m.final_url.as_ref() == Some(u))
         };
-        if known(&url) || final_url.as_ref().is_some_and(|f| known(f)) {
+        if known(&url) || final_url.as_ref().is_some_and(known) {
             return None;
         }
         let idx = g.mirrors.len();

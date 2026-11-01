@@ -164,10 +164,10 @@ fn extension_named(word: &str) -> Option<&'static str> {
     if let Some(e) = KNOWN_EXTENSIONS.iter().find(|e| **e == base) {
         return Some(e);
     }
-    if let Some(singular) = base.strip_suffix('s') {
-        if let Some(e) = KNOWN_EXTENSIONS.iter().find(|e| **e == singular) {
-            return Some(e);
-        }
+    if let Some(singular) = base.strip_suffix('s')
+        && let Some(e) = KNOWN_EXTENSIONS.iter().find(|e| **e == singular)
+    {
+        return Some(e);
     }
     None
 }
@@ -395,10 +395,8 @@ pub fn parse_natural_grabber(input: &str) -> Result<ParsedGrab, ParseError> {
         }
     }
     for tok in &toks {
-        if let Some(ext) = extension_named(tok) {
-            if !extensions.contains(&ext.to_string()) {
-                extensions.push(ext.to_string());
-            }
+        if let Some(ext) = extension_named(tok) && !extensions.contains(&ext.to_string()) {
+            extensions.push(ext.to_string());
         }
     }
     let everything = contains_word(&kept, "everything")

@@ -356,7 +356,7 @@ pub fn missing_translated_langs(tracks: &[SubtitleTrack], patterns: &[String]) -
     for p in patterns {
         if p == "all" {
             let any = tracks.iter().any(|t| {
-                !t.auto || (t.auto && !t.lang.to_ascii_lowercase().ends_with("-orig"))
+                !t.auto || !t.lang.to_ascii_lowercase().ends_with("-orig")
             });
             if !any {
                 missing.push(p.clone());

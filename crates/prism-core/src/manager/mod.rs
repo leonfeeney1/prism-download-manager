@@ -267,10 +267,8 @@ impl Core {
         }
         // LAN sharing restarts when it was on: a bind failure only logs, the
         // app itself still starts (the toggle reports it via `lan_status`).
-        if core.settings().lan.enabled {
-            if let Err(e) = core.start_lan_server().await {
-                tracing::error!("LAN sharing unavailable: {e}");
-            }
+        if core.settings().lan.enabled && let Err(e) = core.start_lan_server().await {
+            tracing::error!("LAN sharing unavailable: {e}");
         }
         if opts.clipboard {
             core.start_clipboard_monitor();
@@ -671,7 +669,8 @@ impl Core {
         if item.url == url_str.trim() || item.mirrors.iter().any(|m| m == url_str.trim()) {
             return Err(anyhow!("That address is already a source of this download"));
         }
-        if let Some(job) = self.0.state.lock().jobs.get(id).cloned() {
+        let job = self.0.state.lock().jobs.get(id).cloned();
+        if let Some(job) = job {
             job.add_source(url.clone())
                 .await
                 .map_err(|e| anyhow!("{}", e.user_message()))?;
@@ -809,10 +808,8 @@ impl Core {
         ) else {
             return;
         };
-        if let Some(parent) = target.parent() {
-            if std::fs::create_dir_all(parent).is_err() {
-                return;
-            }
+        if let Some(parent) = target.parent() && std::fs::create_dir_all(parent).is_err() {
+            return;
         }
         if std::fs::rename(&path, &target).is_err() {
             tracing::warn!("organize {}: could not move file", item.id);
@@ -969,7 +966,7 @@ impl Core {
         let mut removed = Vec::new();
         for id in ids {
             let Some(item) = self.item(id) else { continue };
-            let leaving_list = !(use_trash && !item.trashed);
+            let leaving_list = !use_trash || item.trashed;
             if leaving_list || delete_files {
                 let job = self.0.state.lock().jobs.remove(id);
                 if let Some(job) = job {
