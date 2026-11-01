@@ -144,6 +144,8 @@ jobs:
         with:
           path: artifacts
       - name: Collect installers and checksums
+        env:
+          UPDATE_BASE_URL: https://github.com/leonfeeney1/prism-download-manager/releases/download/${{ github.ref_name }}/
         run: |
           mkdir -p out
           find artifacts -type f \( -name '*.exe' -o -name '*.msi' -o -name '*.dmg' -o -name '*.deb' \
