@@ -1,9 +1,13 @@
-# Prism 1.2.4 — Fork release: updater now points at this fork.
+# Prism 1.3.0 — Fork release: new features, Hugging Face removed.
 
 A fast, open-source download manager for Windows, Linux and macOS, with browser integration
 and video downloads.
 
-## What's new in 1.2.4
+## What's new in 1.3.0
 
-* **In-app updates now come from this fork.** The updater endpoint, download links, and signing key all point at leonfeeney1/prism-download-manager releases, so future fork releases will be detected automatically once this version is installed.
-* **Fork signing key.** Update bundles are signed with the fork's own key.
+* **Hugging Face removed.** The model downloader, its window, settings, and commands are gone from this fork.
+* **Multi-source downloads.** One download now pulls segments from all of its sources at once, with failing mirrors benched and their segments reassigned instead of killing the download. Extra sources can be added while a download runs.
+* **Auto-extract and organize.** Finished archives (zip, tar, tar.gz, tar.xz) extract automatically into a folder named after the archive, and loose files move into their category folder. Failures never touch the original archive.
+* **LAN share.** Completed downloads can be shared with other devices on the local network (off by default, configurable port). Only completed, explicitly-shared items are ever served.
+* **Natural-language grabber.** Describe what to grab in plain English ("download all PDFs from example.com") and review an editable preview before the crawl starts. Parsed locally — no AI service, no key.
+* **Video subtitles + translate.** Requested subtitle languages are satisfied by manual subtitles or the platform's own translated captions where offered, embedded or as sidecar files; missing languages are shown as a warning instead of finishing silently.
