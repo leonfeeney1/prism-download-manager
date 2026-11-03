@@ -65,6 +65,9 @@ pub(crate) enum JobResult {
         error: String,
         resume: Option<serde_json::Value>,
         resumable: Option<bool>,
+        /// The engine refused the file with a bot check (e.g. Cloudflare): the link
+        /// belongs back in the browser, not in the failed list.
+        browser_check: bool,
     },
 }
 
@@ -715,6 +718,7 @@ fn spawn_engine(core: &Core, item: &DownloadItem, media: bool) -> Result<Job> {
                 error: e.user_message(),
                 resume: resume(),
                 resumable: matches!(e, EngineError::RangeNotSupported).then_some(false),
+                browser_check: matches!(e, EngineError::BrowserCheck),
             },
         };
         let _ = core3.0.outcomes.send(JobOutcome { id, result });
@@ -783,6 +787,7 @@ impl VideoJob {
                     error: format!("{e:#}"),
                     resume,
                     resumable: None,
+                    browser_check: false,
                 },
             };
             let _ = core.0.outcomes.send(JobOutcome {
@@ -1544,6 +1549,7 @@ impl TorrentJob {
                     error: format!("{e:#}"),
                     resume: None,
                     resumable: Some(true),
+                    browser_check: false,
                 },
             };
             let _ = core.0.outcomes.send(JobOutcome {

@@ -17,6 +17,7 @@ use prism_core::settings::Settings;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::{AppHandle, Emitter, Manager, RunEvent, WindowEvent};
 use tauri_plugin_notification::NotificationExt;
+use tauri_plugin_opener::OpenerExt;
 
 pub(crate) static QUITTING: AtomicBool = AtomicBool::new(false);
 /// Started with `--background` / `--minimized` (autostart at login passes `--background`).
@@ -623,6 +624,19 @@ fn side_effects(
                 &[("host", host)],
             ),
         ),
+        CoreEvent::BrowserHandback { url, host } => {
+            if let Err(e) = app.opener().open_url(url, None::<&str>) {
+                tracing::error!("could not open the handed-back link in the browser: {e}");
+            }
+            let host = if host.is_empty() { "This site" } else { host };
+            notify(
+                "Opened in the browser",
+                &i18n::tr(
+                    "{host} lets only a web browser download this file, so it was opened in the browser.",
+                    &[("host", host)],
+                ),
+            );
+        },
         CoreEvent::OpenTorrent { source } => {
             if let Err(e) = windows::open(app, "torrent", Some(&encode_path(source))) {
                 tracing::error!("could not open the Add torrent window: {e}");

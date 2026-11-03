@@ -1301,6 +1301,7 @@ impl Core {
                 error,
                 resume,
                 resumable,
+                browser_check,
             } => {
                 let item = self.with_item(&id, |i| {
                     i.status = Status::Failed;
@@ -1320,7 +1321,21 @@ impl Core {
                             kind: "failed".into(),
                         });
                     }
-                    self.emit(CoreEvent::Failed(item));
+                    self.emit(CoreEvent::Failed(item.clone()));
+                    if browser_check {
+                        // The probe had already accepted this download, so the browser
+                        // does not have the file: hand the link back to it instead of
+                        // leaving a dead item behind.
+                        let url = item
+                            .final_url
+                            .clone()
+                            .unwrap_or_else(|| item.url.clone());
+                        let host = url::Url::parse(&url)
+                            .ok()
+                            .and_then(|u| u.host_str().map(String::from))
+                            .unwrap_or_default();
+                        self.emit(CoreEvent::BrowserHandback { url, host });
+                    }
                 }
             }
         }

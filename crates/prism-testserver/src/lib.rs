@@ -16,6 +16,7 @@
 //! | `/blob/<name>?opts` | bytes added with [`TestServer::put_blob`] (`ranges`, `auth`) |
 //! | `/status/<code>` | answers with that status code |
 //! | `/challenge` | a Cloudflare bot check: `403`, `cf-mitigated: challenge`, an HTML page |
+//! | `/challenge-after-first/<name>?opts` | like `/file`, but answers the Cloudflare bot check from the second request to that path on (the probe passes, the download itself is challenged) |
 //! | `/hls/...` | [`HlsFixture`] |
 //! | `/dash/...` | [`DashFixture`] |
 //!
