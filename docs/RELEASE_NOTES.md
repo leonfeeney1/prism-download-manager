@@ -1,13 +1,9 @@
-# Prism 1.3.0 — Fork release: new features, Hugging Face removed.
+# Prism 1.3.1 — Fork release: bot-checked downloads hand back to the browser.
 
 A fast, open-source download manager for Windows, Linux and macOS, with browser integration
 and video downloads.
 
-## What's new in 1.3.0
+## What's new in 1.3.1
 
-* **Hugging Face removed.** The model downloader, its window, settings, and commands are gone from this fork.
-* **Multi-source downloads.** One download now pulls segments from all of its sources at once, with failing mirrors benched and their segments reassigned instead of killing the download. Extra sources can be added while a download runs.
-* **Auto-extract and organize.** Finished archives (zip, tar, tar.gz, tar.xz) extract automatically into a folder named after the archive, and loose files move into their category folder. Failures never touch the original archive.
-* **LAN share.** Completed downloads can be shared with other devices on the local network (off by default, configurable port). Only completed, explicitly-shared items are ever served.
-* **Natural-language grabber.** Describe what to grab in plain English ("download all PDFs from example.com") and review an editable preview before the crawl starts. Parsed locally — no AI service, no key.
-* **Video subtitles + translate.** Requested subtitle languages are satisfied by manual subtitles or the platform's own translated captions where offered, embedded or as sidecar files; missing languages are shown as a warning instead of finishing silently.
+* **Bot-checked downloads hand back to the browser.** When a site lets only a web browser download a file (a Cloudflare-style bot check) and Prism only finds out after taking the download, it now opens the link in the browser instead of leaving a failed item behind — no more dead downloads, no more racing the browser's own downloader.
+* **Upstream 1.2.4 changes, now in a fork release.** The November sync brought in upstream's Linux-only download sounds, the disk-space guard that refuses a merge when the drive is too full, and the 1.2.4 site updates. They reach a release for the first time here.
