@@ -126,7 +126,6 @@ pub(crate) struct State {
     versions: Mutex<HashMap<String, u64>>,
     nonces: Mutex<HashSet<String>>,
     expiring_first_seen: Mutex<HashMap<String, Instant>>,
-    challenge_after_first_seen: Mutex<HashSet<String>>,
     redirect_counter: AtomicU64,
     /// `/blob/<name>` files: their bytes and content type.
     blobs: Mutex<HashMap<String, (Bytes, String)>>,
@@ -146,7 +145,6 @@ impl State {
             versions: Mutex::new(HashMap::new()),
             nonces: Mutex::new(HashSet::new()),
             expiring_first_seen: Mutex::new(HashMap::new()),
-            challenge_after_first_seen: Mutex::new(HashSet::new()),
             redirect_counter: AtomicU64::new(0),
             blobs: Mutex::new(HashMap::new()),
         }
@@ -404,18 +402,6 @@ async fn handle(
             }
         }
         "challenge" => challenge(),
-        "challenge-after-first" => {
-            let seen = !state
-                .challenge_after_first_seen
-                .lock()
-                .unwrap()
-                .insert(path.clone());
-            if seen {
-                challenge()
-            } else {
-                file_route(&state, &conn, &req, rest, &query, &uri).await
-            }
-        }
         "hls" => hls_route(&state, &req, rest),
         "dash" => dash_route(&state, &req, rest),
         _ => status(StatusCode::NOT_FOUND, "not found"),

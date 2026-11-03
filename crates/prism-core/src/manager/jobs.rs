@@ -65,9 +65,6 @@ pub(crate) enum JobResult {
         error: String,
         resume: Option<serde_json::Value>,
         resumable: Option<bool>,
-        /// The engine refused the file with a bot check (e.g. Cloudflare): the link
-        /// belongs back in the browser, not in the failed list.
-        browser_check: bool,
     },
 }
 
@@ -718,7 +715,6 @@ fn spawn_engine(core: &Core, item: &DownloadItem, media: bool) -> Result<Job> {
                 error: e.user_message(),
                 resume: resume(),
                 resumable: matches!(e, EngineError::RangeNotSupported).then_some(false),
-                browser_check: matches!(e, EngineError::BrowserCheck),
             },
         };
         let _ = core3.0.outcomes.send(JobOutcome { id, result });
@@ -787,7 +783,6 @@ impl VideoJob {
                     error: format!("{e:#}"),
                     resume,
                     resumable: None,
-                    browser_check: false,
                 },
             };
             let _ = core.0.outcomes.send(JobOutcome {
@@ -984,9 +979,6 @@ impl VideoJob {
         match plan {
             Plan::Accelerated(plan) => match self.run_accelerated(core, item, plan).await {
                 Ok(done) => Ok(done),
-                // Not enough room to put the video together: yt-dlp would download it all again
-                // and fill the disk (#49).
-                Err(e) if e.downcast_ref::<NotEnoughSpace>().is_some() => Err(e),
                 Err(e) if self.stop.lock().is_none() => {
                     tracing::warn!(
                         "accelerated video download failed ({e:#}); falling back to yt-dlp"
@@ -1135,7 +1127,6 @@ impl VideoJob {
             s.speed = 0;
         });
         plan.post.set_input_dir(&temp);
-        check_room_to_merge(&plan.post)?;
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<YtProgress>();
         let post = core
             .0
@@ -1211,54 +1202,6 @@ impl VideoJob {
                 s.detail = Some(stage_label(other).into());
             }
         });
-    }
-}
-
-/// There isn't room on the disk to put a video together (#49). The downloaded streams stay, so a
-/// retry after making room only puts them together.
-#[derive(Debug)]
-pub(crate) struct NotEnoughSpace {
-    needed: u64,
-    free: u64,
-}
-
-impl std::fmt::Display for NotEnoughSpace {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let gb = |b: u64| b as f64 / 1e9;
-        write!(
-            f,
-            "Not enough free disk space to put the video together: it needs about {:.1} GB, \
-             {:.1} GB is free",
-            gb(self.needed),
-            gb(self.free)
-        )
-    }
-}
-
-impl std::error::Error for NotEnoughSpace {}
-
-/// Putting a video's streams together writes a file about as big as they are, next to them;
-/// with less room ffmpeg filled the disk to the last byte (#49). Checked before it starts.
-fn check_room_to_merge(post: &prism_video::PostProcess) -> Result<()> {
-    // Room for ffmpeg's own files and the file system; small streams always fit in it.
-    const MARGIN: u64 = 64 << 20;
-    let streams: u64 = post
-        .inputs
-        .iter()
-        .filter_map(|i| i.path.as_ref())
-        .filter_map(|p| std::fs::metadata(p).ok())
-        .map(|m| m.len())
-        .sum();
-    let dir = post.output_path.parent().unwrap_or(Path::new("."));
-    room_to_merge(streams + MARGIN, crate::platform::available_space(dir))?;
-    Ok(())
-}
-
-/// `needed` bytes against what's `free` (unknown: assumed enough).
-fn room_to_merge(needed: u64, free: Option<u64>) -> std::result::Result<(), NotEnoughSpace> {
-    match free {
-        Some(free) if free < needed => Err(NotEnoughSpace { needed, free }),
-        _ => Ok(()),
     }
 }
 
@@ -1549,7 +1492,6 @@ impl TorrentJob {
                     error: format!("{e:#}"),
                     resume: None,
                     resumable: Some(true),
-                    browser_check: false,
                 },
             };
             let _ = core.0.outcomes.send(JobOutcome {
@@ -1877,21 +1819,6 @@ impl Core {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn a_video_is_put_together_only_with_room_for_it() {
-        // #49: 8 GB of streams on a disk with 5 GB free stop before ffmpeg fills it.
-        let e = room_to_merge(8_000_000_000, Some(5_000_000_000)).unwrap_err();
-        assert_eq!(
-            e.to_string(),
-            "Not enough free disk space to put the video together: it needs about 8.0 GB, 5.0 GB is free"
-        );
-        // …and that error doesn't send the download to yt-dlp (which would fetch it all again).
-        let any: anyhow::Error = e.into();
-        assert!(any.downcast_ref::<NotEnoughSpace>().is_some());
-        assert!(room_to_merge(8_000_000_000, Some(9_000_000_000)).is_ok());
-        assert!(room_to_merge(8_000_000_000, None).is_ok());
-    }
 
     #[test]
     fn checksum_parsing() {

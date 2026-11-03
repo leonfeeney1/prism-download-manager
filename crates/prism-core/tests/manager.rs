@@ -946,59 +946,6 @@ async fn browser_downloads_only_a_browser_can_get_are_left_to_it() {
     core.shutdown().await;
 }
 
-/// A bot check that only appears once the download itself starts (the probe passed, so the
-/// browser does not have the file): Prism hands the link back to the browser instead of
-/// leaving a failed item behind.
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn browser_check_after_accept_hands_the_link_back_to_the_browser() {
-    let server = TestServer::start(ServerConfig::default()).await.unwrap();
-    let tmp = tempfile::tempdir().unwrap();
-    let core = core_in(tmp.path()).await;
-    let mut rx = core.subscribe();
-    let url = server.url("/challenge-after-first/pkg.zip?size=8000000&seed=7");
-    let info = core.capture(
-        NewItem {
-            url: url.clone(),
-            ..Default::default()
-        },
-        CaptureSource::Browser,
-    );
-    assert!(info.probing);
-    let probed = wait_event(&mut rx, 20, |ev| match ev {
-        CoreEvent::CaptureUpdated(c) if c.id == info.id => Some(c.clone()),
-        _ => None,
-    })
-    .await;
-    assert_eq!(probed.size, Some(8_000_000));
-    let item = core
-        .confirm_capture(CaptureDecision {
-            id: info.id.clone(),
-            ..Default::default()
-        })
-        .unwrap();
-    let failed = wait_event(&mut rx, 60, |ev| match ev {
-        CoreEvent::Failed(i) if i.id == item.id => Some(i.clone()),
-        _ => None,
-    })
-    .await;
-    assert!(
-        failed
-            .error
-            .as_deref()
-            .unwrap_or_default()
-            .contains("web browser")
-    );
-    let handback = wait_event(&mut rx, 20, |ev| match ev {
-        CoreEvent::BrowserHandback { url, host } => Some((url.clone(), host.clone())),
-        _ => None,
-    })
-    .await;
-    assert_eq!(handback.0, url);
-    assert_eq!(handback.1, "127.0.0.1");
-    assert_eq!(core.item(&item.id).unwrap().status, Status::Failed);
-    core.shutdown().await;
-}
-
 /// Settings › General › "Remove downloads whose files were deleted" (like ABDM): off by default;
 /// when on, a finished download whose file was deleted leaves the list, while one whose whole
 /// folder is gone (an unplugged drive) and one whose file is still there stay.

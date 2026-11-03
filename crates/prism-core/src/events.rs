@@ -154,14 +154,6 @@ pub enum CoreEvent {
     LeftToBrowser {
         host: String,
     },
-    /// A download the engine could not fetch because the site lets only a web browser
-    /// download it (a bot check) — and the probe had already accepted it, so the browser
-    /// does not have the file. The app opens the link in the browser instead of leaving
-    /// a failed item behind.
-    BrowserHandback {
-        url: String,
-        host: String,
-    },
     /// Show a torrent in the "Add torrent" window: a magnet link, or the path of a `.torrent`
     /// file Prism fetched from a link (#20).
     OpenTorrent {

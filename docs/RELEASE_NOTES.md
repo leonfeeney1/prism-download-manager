@@ -1,10 +1,13 @@
-# Prism 1.3.2 — Fork release: videos the browser starts now auto-capture from the sniffer.
+# Prism 1.3.0 — Fork release: new features, Hugging Face removed.
 
 A fast, open-source download manager for Windows, Linux and macOS, with browser integration
 and video downloads.
 
-## What's new in 1.3.2
+## What's new in 1.3.0
 
-* **Video downloads auto-capture from the sniffer.** When the browser starts a video download that Prism can't capture itself — the link is bot-checked, uses a scheme Prism can't hand off, or isn't a file Prism's capture list covers — Prism now falls back to the page's single sniffed video link when it differs from the download's own link, and cancels the browser download only after accepting it. No more clicking the extension popup entry and cancelling the browser download by hand.
-* **Careful by design.** The fallback only fires when exactly one sniffed video or stream qualifies — with more than one, Prism guesses nothing — and it never overrides a paused capture, a held bypass key, or an excluded site. If Prism declines the sniffed link too, the browser download stands exactly as before.
-* **This fix lives in the browser extension.** It reaches you through the fork's extension in this release (prism-chromium.zip / prism-firefox.zip), loaded unpacked — the store extension is upstream's and is not updated by fork releases.
+* **Hugging Face removed.** The model downloader, its window, settings, and commands are gone from this fork.
+* **Multi-source downloads.** One download now pulls segments from all of its sources at once, with failing mirrors benched and their segments reassigned instead of killing the download. Extra sources can be added while a download runs.
+* **Auto-extract and organize.** Finished archives (zip, tar, tar.gz, tar.xz) extract automatically into a folder named after the archive, and loose files move into their category folder. Failures never touch the original archive.
+* **LAN share.** Completed downloads can be shared with other devices on the local network (off by default, configurable port). Only completed, explicitly-shared items are ever served.
+* **Natural-language grabber.** Describe what to grab in plain English ("download all PDFs from example.com") and review an editable preview before the crawl starts. Parsed locally — no AI service, no key.
+* **Video subtitles + translate.** Requested subtitle languages are satisfied by manual subtitles or the platform's own translated captions where offered, embedded or as sidecar files; missing languages are shown as a warning instead of finishing silently.

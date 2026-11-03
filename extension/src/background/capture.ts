@@ -5,10 +5,6 @@
  * and before the Save-As dialog; we hold the download (return true), ask the
  * app, and on acceptance cancel + erase it. If the app is unreachable or
  * declines we call `suggest()` and the browser downloads normally (fail open).
- * One exception: when the download itself can't be captured but the page's
- * sniffer holds exactly one video/stream link different from the download's
- * own links, that sniffed link is handed to Prism instead (Fetchly-style:
- * the browser download is cancelled only after Prism accepts it).
  *
  * Firefox (no onDeterminingFilename): blocking `webRequest.onHeadersReceived`
  * cancels `Content-Disposition: attachment` navigations before the download
@@ -17,16 +13,13 @@
 import { BypassTracker } from '../shared/bypass';
 import { api } from '../shared/api';
 import type { NativeError } from '../shared/correlator';
-import { type MediaItem, visibleMedia } from '../shared/media';
 import type { DownloadRequest } from '../shared/protocol';
 import { type CaptureCandidate, decideCapture, filenameFromContentDisposition, filenameFromUrl, isAttachment } from '../shared/rules';
 import { showUnreachable } from './badge';
 import { actionTimeout, cookieHeaderFor, tabInfo, userAgent } from './context';
 import { native } from './native';
 import { type RequestInfo, requestByUrl } from './requests';
-import { getTabMedia } from './sniffer';
 import { getState } from './state';
-import { downloadMedia } from './video';
 
 export const bypass = new BypassTracker();
 
@@ -53,50 +46,11 @@ interface HandOffInput {
   incognito: boolean;
 }
 
-/** What the hand-off decided: `skipped` carries decideCapture's reason, `unreachable` the native error code. */
-export interface HandOffResult {
-  status: 'accepted' | 'declined' | 'skipped' | 'unreachable';
-  reason?: string;
-}
-
-/**
- * When a download the browser started can't be captured itself, the page's sniffer list may
- * still hold the working media link. Only when the failure is about the download's own URL
- * (its scheme or type can't be handed off, it is smaller than the capture minimum, or the app
- * declined it): never when the user paused capture, held the bypass key, excluded the site,
- * or the app is unreachable (a video send would fail there too, and only stall the download).
- */
-export function fallbackEligible(result: HandOffResult): boolean {
-  if (result.status === 'declined') return true;
-  if (result.status !== 'skipped' || !result.reason) return false;
-  return (
-    result.reason === 'unsupported URL scheme' ||
-    result.reason.startsWith('type not in capture list') ||
-    result.reason.startsWith('smaller than ')
-  );
-}
-
-/**
- * The tab's single sniffed video/stream whose link differs from the download's own links,
- * if exactly one qualifies: with more than one, guessing would risk the wrong file, and with
- * the same link the app would only hit the same refusal again.
- */
-export function pickSniffedFallback(
-  media: MediaItem[],
-  downloadUrl: string | undefined,
-  finalUrl: string | undefined,
-): MediaItem | undefined {
-  const candidates = visibleMedia(media).filter(
-    (m) => (m.kind === 'video' || m.kind === 'hls' || m.kind === 'dash') && m.url !== downloadUrl && m.url !== finalUrl,
-  );
-  return candidates.length === 1 ? candidates[0] : undefined;
-}
-
 /**
  * Decides and, if captured, hands the download to the app.
- * Resolves `accepted` only when the app accepted it (the caller then cancels the browser download).
+ * Resolves `true` only when the app accepted it (the caller then cancels the browser download).
  */
-export async function maybeHandOff({ candidate, req, incognito }: HandOffInput): Promise<HandOffResult> {
+export async function maybeHandOff({ candidate, req, incognito }: HandOffInput): Promise<boolean> {
   const t0 = performance.now();
   const st = await getState();
   const isBypass = bypass.isActive([candidate.url, candidate.finalUrl, req?.originalUrl]);
@@ -108,7 +62,7 @@ export async function maybeHandOff({ candidate, req, incognito }: HandOffInput):
   if (!decision.capture) {
     lastCapture.result = `skipped: ${decision.reason}`;
     console.debug('[prism] not captured:', decision.reason, candidate.url);
-    return { status: 'skipped', reason: decision.reason };
+    return false;
   }
   const url = candidate.url;
   const finalUrl = candidate.finalUrl && candidate.finalUrl !== url ? candidate.finalUrl : undefined;
@@ -142,14 +96,14 @@ export async function maybeHandOff({ candidate, req, incognito }: HandOffInput):
     const reply = await native.request({ ...msg, type: 'download' }, { timeoutMs: actionTimeout() });
     lastCapture.deliveredMs = performance.now() - t0;
     lastCapture.result = reply.accepted === false ? 'declined by app' : 'handed off';
-    return reply.accepted === false ? { status: 'declined' } : { status: 'accepted' };
+    return reply.accepted !== false;
   } catch (e) {
     const err = e as NativeError;
     lastCapture.deliveredMs = performance.now() - t0;
     lastCapture.result = `fail-open: ${err.code}`;
     console.warn('[prism] hand-off failed, letting the browser download:', err.code, err.message);
     showUnreachable(true, `download kept in browser (${err.code})`);
-    return { status: 'unreachable', reason: err.code };
+    return false;
   }
 }
 
@@ -186,7 +140,7 @@ async function onDetermining(item: chrome.downloads.DownloadItem, suggest: (s?: 
     const pageUrl = tab?.url && /^https?:/i.test(tab.url) ? tab.url : item.referrer || undefined;
     const size = item.totalBytes > 0 ? item.totalBytes : item.fileSize > 0 ? item.fileSize : undefined;
     const filename = basename(item.filename) || filenameFromUrl(item.finalUrl || item.url) || undefined;
-    const result = await maybeHandOff({
+    const accepted = await maybeHandOff({
       candidate: {
         url: item.url,
         finalUrl: item.finalUrl,
@@ -200,27 +154,9 @@ async function onDetermining(item: chrome.downloads.DownloadItem, suggest: (s?: 
       ...(req ? { req } : {}),
       incognito: item.incognito,
     });
-    if (result.status === 'accepted') {
-      // Cancel before releasing so no Save-As dialog ever appears.
-      await cancelAndErase(item.id);
-      return release();
-    }
-    // The download itself couldn't be captured, but the page's sniffer may hold the working
-    // media link: hand that to Prism instead, and cancel the browser download only after
-    // Prism accepts it. Anything else (no single link, Prism declines it too) falls through
-    // to the browser download, exactly as before.
-    if (fallbackEligible(result) && req?.tabId !== undefined) {
-      try {
-        const pick = pickSniffedFallback(await getTabMedia(req.tabId), item.url, item.finalUrl);
-        if (pick) {
-          await downloadMedia(req.tabId, pick.key);
-          await cancelAndErase(item.id);
-          return release();
-        }
-      } catch {
-        /* the sniffed link didn't take either: the browser download stands */
-      }
-    }
+    if (!accepted) return release();
+    // Cancel before releasing so no Save-As dialog ever appears.
+    await cancelAndErase(item.id);
     release();
   } catch (e) {
     console.error('[prism] capture error', e);
@@ -274,8 +210,7 @@ export function initFirefoxCapture(): void {
         },
         ...(req ? { req } : {}),
         incognito: !!d.incognito,
-      }).then((result) => {
-        const accepted = result.status === 'accepted';
+      }).then((accepted) => {
         if (accepted) markHandedOff(d.url);
         return accepted ? { cancel: true } : {};
       });
@@ -290,7 +225,7 @@ export function initFirefoxCapture(): void {
       const req = requestByUrl(item.url);
       const filename = basename(item.filename) || filenameFromUrl(item.url) || undefined;
       const size = item.totalBytes > 0 ? item.totalBytes : undefined;
-      const result = await maybeHandOff({
+      const accepted = await maybeHandOff({
         candidate: {
           url: req?.originalUrl ?? item.url,
           finalUrl: item.url,
@@ -303,7 +238,7 @@ export function initFirefoxCapture(): void {
         ...(req ? { req } : {}),
         incognito: item.incognito,
       });
-      if (result.status === 'accepted') await cancelAndErase(item.id);
+      if (accepted) await cancelAndErase(item.id);
     })();
   });
 }

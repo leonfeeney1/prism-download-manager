@@ -3,7 +3,7 @@
 
 import { create } from "zustand";
 import { api, onCoreEvent } from "./api";
-import { NATIVE_SOUNDS, soundFile } from "./sounds";
+import { soundFile } from "./sounds";
 import type {
   Bootstrap,
   Category,
@@ -166,8 +166,7 @@ export function handleEvent(e: CoreEvent) {
       st.applySettings(e.payload);
       break;
     case "playSound":
-      // On Linux the app plays it (once), not each window.
-      if (!NATIVE_SOUNDS) playSound(e.payload.kind);
+      playSound(e.payload.kind);
       break;
     case "postActionPending":
       useApp.setState({
@@ -220,10 +219,6 @@ const soundCache: Record<string, HTMLAudioElement> = {};
 export function playSound(kind: string, completeSound?: string) {
   const s = useApp.getState().settings;
   if (!s?.sounds.enabled) return;
-  if (NATIVE_SOUNDS) {
-    void api.playSound(kind, completeSound).catch(() => undefined);
-    return;
-  }
   const file = soundFile(kind, completeSound ?? s.sounds.completeSound);
   const audio = (soundCache[file] ??= new Audio(`/sounds/${file}.wav`));
   audio.volume = Math.max(0, Math.min(1, s.sounds.volume));

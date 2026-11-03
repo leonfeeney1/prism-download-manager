@@ -5,8 +5,6 @@
 mod commands;
 mod i18n;
 mod integration;
-#[cfg(target_os = "linux")]
-mod sound;
 mod tray;
 mod updates;
 mod windows;
@@ -17,7 +15,6 @@ use prism_core::settings::Settings;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::{AppHandle, Emitter, Manager, RunEvent, WindowEvent};
 use tauri_plugin_notification::NotificationExt;
-use tauri_plugin_opener::OpenerExt;
 
 pub(crate) static QUITTING: AtomicBool = AtomicBool::new(false);
 /// Started with `--background` / `--minimized` (autostart at login passes `--background`).
@@ -247,7 +244,6 @@ fn main() {
             commands::extension_folder,
             commands::open_browser,
             commands::open_extension_store,
-            commands::play_sound,
             commands::open_details,
             commands::open_window,
             commands::toggle_mini,
@@ -477,16 +473,13 @@ fn limit_malloc_arenas() {
     }
 }
 
-/// Linux (#40): when the last download stops, hand the memory it freed back to the system. On a
-/// thread of its own: the windows' events don't wait for it.
+/// Linux (#40): when the last download stops, hand the memory it freed back to the system.
 fn release_free_memory() {
     #[cfg(all(target_os = "linux", target_env = "gnu"))]
-    std::thread::spawn(|| {
-        // SAFETY: malloc_trim only returns free heap pages to the system.
-        unsafe {
-            libc::malloc_trim(0);
-        }
-    });
+    // SAFETY: malloc_trim only returns free heap pages to the system.
+    unsafe {
+        libc::malloc_trim(0);
+    }
 }
 
 /// Hex-encode an argument so it can travel inside a window label/route.
@@ -624,19 +617,6 @@ fn side_effects(
                 &[("host", host)],
             ),
         ),
-        CoreEvent::BrowserHandback { url, host } => {
-            if let Err(e) = app.opener().open_url(url, None::<&str>) {
-                tracing::error!("could not open the handed-back link in the browser: {e}");
-            }
-            let host = if host.is_empty() { "This site" } else { host };
-            notify(
-                "Opened in the browser",
-                &i18n::tr(
-                    "{host} lets only a web browser download this file, so it was opened in the browser.",
-                    &[("host", host)],
-                ),
-            );
-        },
         CoreEvent::OpenTorrent { source } => {
             if let Err(e) = windows::open(app, "torrent", Some(&encode_path(source))) {
                 tracing::error!("could not open the Add torrent window: {e}");
@@ -668,13 +648,6 @@ fn side_effects(
                 }
             }
         }
-        // Linux plays sounds here, once, instead of in every window (#41).
-        #[cfg(target_os = "linux")]
-        CoreEvent::PlaySound { kind } if settings.sounds.enabled => sound::play(
-            kind,
-            &settings.sounds.complete_sound,
-            settings.sounds.volume,
-        ),
         CoreEvent::ShowMain => windows::show_main(app),
         CoreEvent::ExitRequested => {
             let app = app.clone();
