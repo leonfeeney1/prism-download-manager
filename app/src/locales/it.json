@@ -1161,4 +1161,33 @@
   "Write it in plain English, for example: download all PDFs from example.com. Nothing starts until you check the rules below.": "Write it in plain English, for example: download all PDFs from example.com. Nothing starts until you check the rules below.",
   "Parse": "Parse",
   "Use these rules": "Use these rules"
+,
+  "Checked {count} links": {
+    "one": "{count} collegamento controllato",
+    "other": "{count} collegamenti controllati"
+  },
+  "{count} dead links": {
+    "one": "{count} collegamento non funzionante",
+    "other": "{count} collegamenti non funzionanti"
+  }
+,
+  "Dead link — this address no longer works": "Link non funzionante — questo indirizzo non funziona più",
+  "Dead link": "Link non funzionante",
+  "Check selected links": "Controlla i link selezionati",
+  "Check links": "Controlla i link",
+  "Could not check links": "Impossibile controllare i link",
+  "Nothing to check": "Niente da controllare",
+  "No queued downloads to check.": "Nessun download in coda da controllare.",
+  "All links are alive.": "Tutti i link funzionano.",
+  "Check link": "Controlla il link",
+  "Could not check link": "Impossibile controllare il link",
+  "Link is alive": "Il link funziona",
+  "Could not tell": "Impossibile stabilirlo",
+  "Remote control": "Controllo remoto",
+  "Open this address on your phone to pause, resume and add downloads.": "Apri questo indirizzo sul telefono per mettere in pausa, riprendere e aggiungere download.",
+  "Copied": "Copiato",
+  "Remote token": "Token di controllo remoto",
+  "Type this into the remote control page on your phone, once.": "Digitalo una volta nella pagina di controllo remoto sul telefono.",
+  "Could not start the stream": "Impossibile avviare lo streaming",
+  "Stream": "Riproduci in streaming"
 }

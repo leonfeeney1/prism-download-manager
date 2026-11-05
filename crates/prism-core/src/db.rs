@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 
 pub type DbResult<T> = Result<T, rusqlite::Error>;
 
-const SCHEMA_VERSION: i64 = 4;
+const SCHEMA_VERSION: i64 = 5;
 
 pub struct Db {
     conn: Mutex<Connection>,
@@ -112,6 +112,13 @@ impl Db {
             // Subtitle-translation note for finished videos (v3 tables lack it).
             conn.execute_batch(
                 "ALTER TABLE downloads ADD COLUMN subtitle_note TEXT;",
+            )?;
+        }
+        if version < 5 {
+            // Dead-link check outcome for queued downloads (v4 tables lack it).
+            conn.execute_batch(
+                "ALTER TABLE downloads ADD COLUMN link_status TEXT;
+                 ALTER TABLE downloads ADD COLUMN link_checked_at INTEGER;",
             )?;
         }
         conn.execute(
@@ -342,15 +349,15 @@ impl Db {
 const DOWNLOAD_COLUMNS: &str = "id, kind, url, final_url, file_name, save_dir, size, downloaded, status, error,
     category, queue_id, description, referer, added_at, last_try_at, finished_at, resumable, connections,
     speed_limit, checksum, trashed, position, mirrors, grabber_project, request, resume, media,
-    extracted_dir, extract_error, lan_shared, subtitle_note";
+    extracted_dir, extract_error, lan_shared, subtitle_note, link_status, link_checked_at";
 
 fn upsert_download_on(conn: &Connection, d: &DownloadItem) -> DbResult<()> {
     conn.execute(
         "INSERT INTO downloads(id, kind, url, final_url, file_name, save_dir, size, downloaded, status, error,
             category, queue_id, description, referer, added_at, last_try_at, finished_at, resumable, connections,
             speed_limit, checksum, trashed, position, mirrors, grabber_project, request, resume, media,
-            extracted_dir, extract_error, lan_shared, subtitle_note)
-         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22,?23,?24,?25,?26,?27,?28,?29,?30,?31,?32)
+            extracted_dir, extract_error, lan_shared, subtitle_note, link_status, link_checked_at)
+         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22,?23,?24,?25,?26,?27,?28,?29,?30,?31,?32,?33,?34)
          ON CONFLICT(id) DO UPDATE SET kind=excluded.kind, url=excluded.url, final_url=excluded.final_url,
             file_name=excluded.file_name, save_dir=excluded.save_dir, size=excluded.size,
             downloaded=excluded.downloaded, status=excluded.status, error=excluded.error,
@@ -361,7 +368,8 @@ fn upsert_download_on(conn: &Connection, d: &DownloadItem) -> DbResult<()> {
             mirrors=excluded.mirrors, grabber_project=excluded.grabber_project, request=excluded.request,
             resume=excluded.resume, media=excluded.media, extracted_dir=excluded.extracted_dir,
             extract_error=excluded.extract_error, lan_shared=excluded.lan_shared,
-            subtitle_note=excluded.subtitle_note",
+            subtitle_note=excluded.subtitle_note, link_status=excluded.link_status,
+            link_checked_at=excluded.link_checked_at",
         params![
             d.id,
             d.kind.as_str(),
@@ -395,6 +403,8 @@ fn upsert_download_on(conn: &Connection, d: &DownloadItem) -> DbResult<()> {
             d.extract_error,
             d.lan_shared,
             d.subtitle_note,
+            d.link_status.map(|s| s.as_str()),
+            d.link_checked_at.map(|t| t as i64),
         ],
     )?;
     Ok(())
@@ -434,6 +444,8 @@ fn row_to_item(r: &Row<'_>) -> DbResult<DownloadItem> {
         extract_error: r.get(29)?,
         lan_shared: r.get(30)?,
         subtitle_note: r.get(31)?,
+        link_status: r.get::<_, Option<String>>(32)?.map(|s| LinkStatus::parse(&s)),
+        link_checked_at: r.get::<_, Option<i64>>(33)?.map(|v| v as u64),
     })
 }
 

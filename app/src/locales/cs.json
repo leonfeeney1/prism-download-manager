@@ -1185,4 +1185,33 @@
   "Write it in plain English, for example: download all PDFs from example.com. Nothing starts until you check the rules below.": "Write it in plain English, for example: download all PDFs from example.com. Nothing starts until you check the rules below.",
   "Parse": "Parse",
   "Use these rules": "Use these rules"
+,
+  "Checked {count} links": {
+    "one": "{count} odkaz zkontrolován",
+    "other": "{count} odkazů zkontrolováno"
+  },
+  "{count} dead links": {
+    "one": "{count} nefunkční odkaz",
+    "other": "{count} nefunkčních odkazů"
+  }
+,
+  "Dead link — this address no longer works": "Mrtvý odkaz — tato adresa již nefunguje",
+  "Dead link": "Mrtvý odkaz",
+  "Check selected links": "Zkontrolovat vybrané odkazy",
+  "Check links": "Zkontrolovat odkazy",
+  "Could not check links": "Odkazy se nepodařilo zkontrolovat",
+  "Nothing to check": "Není co zkontrolovat",
+  "No queued downloads to check.": "Žádná stahování ve frontě ke kontrole.",
+  "All links are alive.": "Všechny odkazy fungují.",
+  "Check link": "Zkontrolovat odkaz",
+  "Could not check link": "Odkaz se nepodařilo zkontrolovat",
+  "Link is alive": "Odkaz funguje",
+  "Could not tell": "Nelze zjistit",
+  "Remote control": "Dálkové ovládání",
+  "Open this address on your phone to pause, resume and add downloads.": "Otevřete tuto adresu v telefonu a pozastavte, obnovte nebo přidejte stahování.",
+  "Copied": "Zkopírováno",
+  "Remote token": "Token dálkového ovládání",
+  "Type this into the remote control page on your phone, once.": "Zadejte jej jednou na stránce dálkového ovládání v telefonu.",
+  "Could not start the stream": "Stream se nepodařilo spustit",
+  "Stream": "Streamovat"
 }

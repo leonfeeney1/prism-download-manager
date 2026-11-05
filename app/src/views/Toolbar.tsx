@@ -6,9 +6,9 @@ import { actions } from "../lib/actions";
 import { api } from "../lib/api";
 import { formatBytes } from "../lib/format";
 import { t } from "../lib/i18n";
-import { canPause, canResume, displayName } from "../lib/present";
+import { canCheckLink, canPause, canResume, displayName } from "../lib/present";
 import { useApp } from "../lib/store";
-import { attempt, useUi } from "../lib/ui";
+import { attempt, toast, useUi } from "../lib/ui";
 import { win } from "../lib/win";
 
 export function Toolbar() {
@@ -19,6 +19,7 @@ export function Toolbar() {
   const limiter = useApp((s) => s.settings?.downloads.speedLimiterEnabled ?? false);
   const limit = useApp((s) => s.settings?.downloads.speedLimit ?? 0);
   const hasFinished = useApp((s) => Object.values(s.items).some((i) => i.status === "completed" && !i.trashed));
+  const hasCheckable = useApp((s) => Object.values(s.items).some((i) => canCheckLink(i)));
   const ui = useUi.getState;
 
   const queue = queues.find((q) => q.id === (view.kind === "queue" ? view.id : "main")) ?? queues[0];
@@ -37,6 +38,7 @@ export function Toolbar() {
       <span className="tb-sep" />
       <IconButton icon="delete" label={t("Delete")} kbd="Del" disabled={!selection.length} onClick={() => actions.requestDelete(selection)} />
       <IconButton icon="delete-completed" label={t("Remove completed from the list")} disabled={!hasFinished} onClick={() => void attempt(api.removeCompleted(), t("Could not remove completed downloads"))} />
+      <IconButton icon="link" label={selection.length ? t("Check selected links") : t("Check links")} disabled={!hasCheckable} onClick={() => void checkLinks(selection.length ? selection : null)} />
       <span className="tb-sep" />
       <IconButton icon="start-queue" label={queue ? t("Start {name}", { name: displayName(queue.name) }) : t("Start queue")} disabled={!queue || queue.running} onClick={() => queue && void attempt(api.startQueue(queue.id))} />
       <IconButton icon="stop-queue" label={queue ? t("Stop {name}", { name: displayName(queue.name) }) : t("Stop queue")} disabled={!queue || !queue.running} onClick={() => queue && void attempt(api.stopQueue(queue.id))} />
@@ -58,6 +60,27 @@ export function Toolbar() {
       <Caption />
     </header>
   );
+}
+
+/** Probe the selected links (or the whole queued list) and summarise the dead ones. */
+async function checkLinks(ids: string[] | null) {
+  const results = await attempt(api.checkLinks(ids), t("Could not check links"));
+  if (!results) return;
+  if (!results.length) {
+    toast(t("Nothing to check"), { body: t("No queued downloads to check.") });
+    return;
+  }
+  const dead = results.filter((r) => r.status === "dead").length;
+  if (dead > 0) {
+    toast(t("Checked {count} links", { count: results.length }), {
+      kind: "error",
+      body: t("{count} dead links", { count: dead }),
+    });
+  } else {
+    toast(t("Checked {count} links", { count: results.length }), {
+      body: t("All links are alive."),
+    });
+  }
 }
 
 function SearchBox() {

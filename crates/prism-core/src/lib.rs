@@ -20,6 +20,7 @@ pub mod nl_grabber;
 pub mod model;
 pub mod paths;
 pub mod platform;
+pub mod stream;
 mod rt;
 pub mod scheduler;
 pub mod settings;

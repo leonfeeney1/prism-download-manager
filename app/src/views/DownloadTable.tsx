@@ -209,6 +209,11 @@ const Row = memo(function Row({ id, index, top, cols, selected, fresh, compact, 
             <div className="name">
               <div className="name__t" title={item.fileName}>
                 {item.fileName}
+                {item.linkStatus === "dead" && (
+                  <span className="badge badge--danger name__dead" title={t("Dead link — this address no longer works")}>
+                    {t("Dead link")}
+                  </span>
+                )}
               </div>
               {!compact && <div className="name__m">{metaLine(item, categories)}</div>}
             </div>

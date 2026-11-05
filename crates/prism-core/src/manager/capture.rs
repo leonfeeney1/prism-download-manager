@@ -7,7 +7,7 @@ use crate::events::*;
 use crate::ipc::{BoxFuture, IpcHandler};
 use crate::model::*;
 use crate::settings::{ConflictAction, Settings};
-use anyhow::{Result, anyhow};
+use anyhow::{Context, Result, anyhow};
 use serde::Deserialize;
 use std::path::PathBuf;
 
@@ -296,6 +296,8 @@ impl Core {
             extract_error: None,
             subtitle_note: None,
             lan_shared: false,
+            link_status: None,
+            link_checked_at: None,
             request,
             resume: None,
             media: n.media.clone(),
@@ -1817,6 +1819,94 @@ impl crate::lan::LanSource for Core {
                 size: i.size.unwrap_or(0),
             })
             .collect()
+    }
+}
+
+/// What the phone remote control may do: list downloads, pause/resume them,
+/// and add one from an address. Only ever over the LAN, behind the token.
+impl crate::lan::RemoteControl for Core {
+    fn remote_items(&self) -> Vec<crate::lan::RemoteItem> {
+        self.0
+            .state
+            .lock()
+            .items
+            .values()
+            .filter(|i| !i.trashed)
+            .map(|i| crate::lan::RemoteItem {
+                id: i.id.clone(),
+                name: i.file_name.clone(),
+                status: i.status.as_str().to_string(),
+                size: i.size,
+                downloaded: i.downloaded,
+            })
+            .collect()
+    }
+
+    fn remote_pause(&self, id: &str) -> bool {
+        if !self.0.state.lock().items.contains_key(id) {
+            return false;
+        }
+        self.pause_items(std::slice::from_ref(&id.to_string()));
+        true
+    }
+
+    fn remote_resume(&self, id: &str) -> bool {
+        if !self.0.state.lock().items.contains_key(id) {
+            return false;
+        }
+        self.start_items(std::slice::from_ref(&id.to_string()));
+        true
+    }
+
+    fn remote_add(&self, url: &str) -> Option<String> {
+        if url.is_empty() || !(url.contains("://") || url.starts_with("magnet:")) {
+            return None;
+        }
+        // Video pages need the quality picker, which the phone can't do.
+        if is_video_page(url) {
+            return None;
+        }
+        let n = NewItem {
+            url: url.to_string(),
+            ..Default::default()
+        };
+        self.add_items(vec![n], StartMode::Now)
+            .ok()?
+            .into_iter()
+            .next()
+            .map(|i| i.id)
+    }
+}
+
+/// What the torrent stream server opens: the file of a running torrent, as
+/// librqbit's playback-ordered stream.
+impl crate::stream::StreamSource for Core {
+    fn open_stream(
+        &self,
+        item_id: &str,
+        file_index: usize,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = Result<crate::stream::StreamFile>> + Send + '_>,
+    > {
+        let core = self.clone();
+        let item_id = item_id.to_string();
+        Box::pin(async move {
+            let item = core.item(&item_id).context("unknown download")?;
+            let hash = super::jobs::torrent_hash(&item).context("not a torrent")?;
+            let engine = core.torrent_engine().await?;
+            let meta = engine.meta(&hash).context("torrent is not running")?;
+            let file = meta
+                .files
+                .get(file_index)
+                .context("no such file in this torrent")?;
+            let stream = engine.stream(&hash, file_index).await?;
+            Ok(crate::stream::StreamFile {
+                name: file.path.clone(),
+                len: file.size,
+                content_type: crate::stream::content_type_for(&file.path),
+                stream: Box::new(stream),
+            })
+        })
     }
 }
 

@@ -7,6 +7,7 @@
 //! (250 ms), resume checkpoints (2 s) and queue/schedule evaluation (1 s).
 
 mod capture;
+mod checks;
 mod grab;
 mod jobs;
 mod peek;
@@ -16,6 +17,7 @@ pub use capture::{
     BatchDecision, CaptureDecision, NewItem, ONE_AT_A_TIME_QUEUE, StartMode, VideoDecision,
     VideoEntry,
 };
+pub use checks::LinkCheck;
 pub use jobs::ItemDetails;
 pub use jobs::SourceStatus;
 pub use peek::{PeekProblem, ZipFile};
@@ -126,6 +128,8 @@ pub(crate) struct Inner {
     pub ipc: Mutex<Option<crate::ipc::IpcServer>>,
     /// The LAN sharing server, when sharing is on (one-tap stop = drop this).
     pub lan: Mutex<Option<crate::lan::LanServer>>,
+    /// The torrent stream server, started on demand (loopback only).
+    pub stream_server: Mutex<Option<crate::stream::StreamServer>>,
     pub clipboard: Mutex<Option<crate::clipboard::ClipboardMonitor>>,
     pub post_action_cancel: Mutex<Option<tokio_util::sync::CancellationToken>>,
     /// Last time the browser extension talked to us (ms since epoch, 0 = never).
@@ -235,6 +239,7 @@ impl Core {
             data_dir: opts.data_dir.clone(),
             ipc: Mutex::new(None),
             lan: Mutex::new(None),
+            stream_server: Mutex::new(None),
             clipboard: Mutex::new(None),
             post_action_cancel: Mutex::new(None),
             ext_seen: std::sync::atomic::AtomicI64::new(
@@ -356,9 +361,13 @@ impl Core {
             .values()
             .filter(|i| i.lan_shared && i.status == Status::Completed && !i.trashed)
             .count();
-        let (running, address) = match self.0.lan.lock().as_ref() {
-            Some(server) => (true, Some(format!("http://{}", server.addr))),
-            None => (false, None),
+        let (running, address, remote_url) = match self.0.lan.lock().as_ref() {
+            Some(server) => (
+                true,
+                Some(format!("http://{}", server.addr)),
+                Some(format!("http://{}/remote", server.addr)),
+            ),
+            None => (false, None, None),
         };
         crate::lan::LanStatus {
             enabled: settings.enabled,
@@ -366,7 +375,19 @@ impl Core {
             address,
             port: settings.port,
             shared_count,
+            remote_url,
         }
+    }
+
+    /// The phone remote control's token, generated once and kept in settings.
+    fn ensure_remote_token(&self) -> Result<String> {
+        let token = self.settings().lan.remote_token;
+        if !token.is_empty() {
+            return Ok(token);
+        }
+        let token = uuid::Uuid::new_v4().simple().to_string();
+        self.update_settings(&serde_json::json!({"lan": {"remoteToken": token}}))?;
+        Ok(token)
     }
 
     /// Start the LAN server on the machine's LAN address, if it is not running.
@@ -377,8 +398,11 @@ impl Core {
         let ip = crate::lan::local_lan_ip()
             .ok_or_else(|| anyhow!("No local network address found"))?;
         let port = self.settings().lan.port;
+        let token = self.ensure_remote_token()?;
         let server = crate::lan::LanServer::start(
             Arc::new(self.clone()),
+            Arc::new(self.clone()),
+            token,
             std::net::SocketAddr::new(ip, port),
         )
         .await
@@ -411,8 +435,11 @@ impl Core {
         if self.0.lan.lock().is_some() {
             let ip = crate::lan::local_lan_ip()
                 .ok_or_else(|| anyhow!("No local network address found"))?;
+            let token = self.ensure_remote_token()?;
             let server = crate::lan::LanServer::start(
                 Arc::new(self.clone()),
+                Arc::new(self.clone()),
+                token,
                 std::net::SocketAddr::new(ip, port),
             )
             .await
@@ -1099,8 +1126,53 @@ impl Core {
                 }))
                 .collect(),
             },
+            torrent_files: if item.kind == ItemKind::Torrent {
+                jobs::torrent_hash(&item)
+                    .and_then(|h| self.0.torrent.get()?.meta(&h))
+                    .map(|m| m.files)
+                    .unwrap_or_default()
+            } else {
+                Vec::new()
+            },
             item,
         })
+    }
+
+    /// Address to stream one file of a torrent in the browser or a player.
+    /// Starts the loopback stream server on first use. Fails fast when the
+    /// torrent isn't running or has no such file, instead of handing out a
+    /// link that would only 404.
+    pub async fn stream_url(&self, item_id: &str, file_index: usize) -> Result<String> {
+        let item = self.item(item_id).context("unknown download")?;
+        if item.kind != ItemKind::Torrent {
+            return Err(anyhow!("not a torrent download"));
+        }
+        let hash = jobs::torrent_hash(&item).context("torrent has no info-hash yet")?;
+        let engine = self.torrent_engine().await?;
+        let meta = engine.meta(&hash).context("torrent is not running")?;
+        let file = meta
+            .files
+            .get(file_index)
+            .context("no such file in this torrent")?;
+        if !crate::stream::is_streamable(&file.path) {
+            return Err(anyhow!("that file is not a video or audio file"));
+        }
+        // The guard is never held across the await below: two callers racing
+        // here may each start a server, and the loser is dropped (shut down).
+        if let Some(server) = self.0.stream_server.lock().as_ref() {
+            let addr = server.addr;
+            return Ok(format!(
+                "http://127.0.0.1:{}/stream/{item_id}/{file_index}",
+                addr.port()
+            ));
+        }
+        let server = crate::stream::StreamServer::start(Arc::new(self.clone())).await?;
+        let addr = server.addr;
+        *self.0.stream_server.lock() = Some(server);
+        Ok(format!(
+            "http://127.0.0.1:{}/stream/{item_id}/{file_index}",
+            addr.port()
+        ))
     }
 
     // ----- background loops -------------------------------------------------------------------

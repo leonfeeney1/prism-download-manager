@@ -65,7 +65,18 @@ export interface DownloadItem {
   subtitleNote?: string | null;
   /** Offered on the LAN while LAN sharing is on (completed items only). */
   lanShared?: boolean;
+  /** Outcome of the last dead-link check; absent when never checked. */
+  linkStatus?: "ok" | "dead" | "unknown" | null;
+  /** When the link was last checked (ms since epoch). */
+  linkCheckedAt?: number | null;
   media?: MediaInfo | null;
+}
+
+/** One link checked by the dead-link checker. */
+export interface LinkCheck {
+  id: string;
+  status: "ok" | "dead" | "unknown";
+  message: string;
 }
 
 export interface LanStatus {
@@ -74,6 +85,8 @@ export interface LanStatus {
   address?: string | null;
   port: number;
   sharedCount: number;
+  /** Address of the phone remote control page, when the server is running. */
+  remoteUrl?: string | null;
 }
 
 export interface Progress {
@@ -111,6 +124,7 @@ export interface ItemDetails {
   progress?: Progress | null;
   speedHistory: number[];
   sources: SourceStatus[];
+  torrentFiles?: { index: number; path: string; size: number }[] | null;
 }
 
 export interface Category {
@@ -246,6 +260,8 @@ export interface Settings {
   lan: {
     enabled: boolean;
     port: number;
+    /** Token the phone remote control asks for. */
+    remoteToken: string;
   };
   connection: {
     userAgent: string;

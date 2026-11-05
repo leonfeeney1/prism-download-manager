@@ -14,6 +14,7 @@ import type {
   GrabberProject,
   ItemDetails,
   LanStatus,
+  LinkCheck,
   Queue,
   Settings,
   SniffedStream,
@@ -193,8 +194,12 @@ export const api = {
   emptyTrash: () => invoke<void>("empty_trash"),
   removeCompleted: () => invoke<void>("remove_completed"),
   redownload: (id: string) => invoke<void>("redownload", { id }),
+  checkLinks: (ids?: string[] | null) =>
+    invoke<LinkCheck[]>("check_links", { ids }),
   updateItem: (id: string, patch: ItemPatch) => invoke<DownloadItem>("update_item", { id, patch }),
   itemDetails: (id: string) => invoke<ItemDetails | null>("item_details", { id }),
+  streamTorrent: (id: string, fileIndex: number) =>
+    invoke<string>("stream_torrent", { id, fileIndex }),
   addSource: (id: string, url: string) => invoke<DownloadItem>("add_source", { id, url }),
   extractItem: (id: string) => invoke<DownloadItem>("extract_download", { id }),
   lanStatus: () => invoke<LanStatus>("lan_status"),

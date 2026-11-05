@@ -1138,4 +1138,33 @@
   "Write it in plain English, for example: download all PDFs from example.com. Nothing starts until you check the rules below.": "Write it in plain English, for example: download all PDFs from example.com. Nothing starts until you check the rules below.",
   "Parse": "Parse",
   "Use these rules": "Use these rules"
+,
+  "Checked {count} links": {
+    "one": "{count} Link geprüft",
+    "other": "{count} Links geprüft"
+  },
+  "{count} dead links": {
+    "one": "{count} toter Link",
+    "other": "{count} tote Links"
+  }
+,
+  "Dead link — this address no longer works": "Toter Link — diese Adresse funktioniert nicht mehr",
+  "Dead link": "Toter Link",
+  "Check selected links": "Ausgewählte Links prüfen",
+  "Check links": "Links prüfen",
+  "Could not check links": "Links konnten nicht geprüft werden",
+  "Nothing to check": "Nichts zu prüfen",
+  "No queued downloads to check.": "Keine Downloads in der Warteschlange zum Prüfen.",
+  "All links are alive.": "Alle Links funktionieren.",
+  "Check link": "Link prüfen",
+  "Could not check link": "Link konnte nicht geprüft werden",
+  "Link is alive": "Link funktioniert",
+  "Could not tell": "Nicht feststellbar",
+  "Remote control": "Fernsteuerung",
+  "Open this address on your phone to pause, resume and add downloads.": "Öffnen Sie diese Adresse auf Ihrem Telefon, um Downloads zu pausieren, fortzusetzen und hinzuzufügen.",
+  "Copied": "Kopiert",
+  "Remote token": "Fernsteuerungs-Token",
+  "Type this into the remote control page on your phone, once.": "Geben Sie diesen einmal auf der Fernsteuerungsseite Ihres Telefons ein.",
+  "Could not start the stream": "Stream konnte nicht gestartet werden",
+  "Stream": "Streamen"
 }

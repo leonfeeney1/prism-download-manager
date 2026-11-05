@@ -252,6 +252,21 @@ impl TorrentEngine {
         self.session.pause(&handle).await
     }
 
+    /// Open a file of a running torrent as a stream that fetches pieces in
+    /// playback order (with a lookahead), so a video plays while the rest
+    /// still downloads. librqbit has no global sequential mode — this is the
+    /// stream that makes watching-while-downloading work.
+    pub async fn stream(
+        &self,
+        info_hash: &str,
+        file_id: usize,
+    ) -> Result<impl tokio::io::AsyncRead + tokio::io::AsyncSeek + Unpin + Send + use<>> {
+        let id = TorrentIdOrHash::parse(info_hash).context("bad info-hash")?;
+        let handle = self.session.get(id).context("torrent is not running")?;
+        let stream = handle.stream(file_id).await?;
+        Ok(stream)
+    }
+
     pub async fn resume(&self, info_hash: &str) -> Result<()> {
         let handle = self.handle(info_hash).context("unknown torrent")?;
         self.session.unpause(&handle).await
@@ -416,5 +431,21 @@ mod tests {
             let json = serde_json::to_string(&src).unwrap();
             assert_eq!(serde_json::from_str::<TorrentSource>(&json).unwrap(), src);
         }
+    }
+
+    #[tokio::test]
+    async fn stream_of_an_unknown_torrent_errors() {
+        let dir = tempfile::tempdir().unwrap();
+        let engine = TorrentEngine::start_offline(dir.path().to_path_buf())
+            .await
+            .unwrap();
+        let err = match engine.stream(&"0".repeat(40), 0).await {
+            Ok(_) => panic!("expected an error for an unknown torrent"),
+            Err(e) => e,
+        };
+        assert!(
+            err.to_string().contains("not running"),
+            "unexpected error: {err:#}"
+        );
     }
 }

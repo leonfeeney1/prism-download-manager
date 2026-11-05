@@ -8,7 +8,8 @@ import { Icon } from "../design/icons";
 import { api } from "../lib/api";
 import { formatBytes, formatDuration, formatSpeed } from "../lib/format";
 import { t, tr } from "../lib/i18n";
-import { canPause, formatPct, progressOf, statusView } from "../lib/present";
+import { openUrl } from "../lib/links";
+import { canPause, formatPct, isStreamableFile, progressOf, statusView } from "../lib/present";
 import { useApp } from "../lib/store";
 import { attempt } from "../lib/ui";
 import { formatRange, ltr } from "../lib/videoPart";
@@ -234,6 +235,32 @@ export default function DetailsWindow({ id, simple }: { id: string; simple?: boo
           </div>
         )}
       </div>
+
+      {item.kind === "torrent" && (details?.torrentFiles ?? []).length > 0 && (
+        <div className="panel">
+          <div className="panel__conn">
+            <div className="ph">{t("Files")}</div>
+            {(details?.torrentFiles ?? []).map((f) => (
+              <div key={f.index} className="ellipsis selectable" title={f.path} style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.path}</span>
+                <span className="tnum text-tertiary">{formatBytes(f.size)}</span>
+                {isStreamableFile(f.path) && (
+                  <button
+                    type="button"
+                    className="btn btn--ghost"
+                    onClick={async () => {
+                      const url = await attempt(api.streamTorrent(id, f.index), t("Could not start the stream"));
+                      if (url) void openUrl(url);
+                    }}
+                  >
+                    <Icon name="play" size={14} /> {t("Stream")}
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <footer className="dialog__footer">
         <label className="opt" data-tip={limit === 0 && settings?.downloads.speedLimiterEnabled ? t("Also shares the global {speed} limit (Settings → Speed & queues)", { speed: formatSpeed(settings.downloads.speedLimit) }) : undefined}>

@@ -45,6 +45,8 @@ pub struct ItemDetails {
     pub progress: Option<Progress>,
     pub speed_history: Vec<u64>,
     pub sources: Vec<SourceStatus>,
+    /// The torrent's files, when this is a running torrent (empty otherwise).
+    pub torrent_files: Vec<prism_torrent::TorrentFile>,
 }
 
 pub(crate) struct JobOutcome {
@@ -503,6 +505,8 @@ pub(crate) struct ProbeFailure {
     pub needs_auth: bool,
     /// The site lets only a browser download it (a bot check, or a web page instead of the file).
     pub browser_only: bool,
+    /// HTTP status the server answered with, when it answered at all.
+    pub status: Option<u16>,
 }
 
 /// The request a capture's link is tried with (and its "What's inside" read): the link's own
@@ -524,6 +528,7 @@ pub(crate) async fn probe(
         message: "Invalid address".into(),
         needs_auth: false,
         browser_only: false,
+        status: None,
     })?;
     req.expect_file = n
         .file_name
@@ -547,12 +552,17 @@ pub(crate) async fn probe(
                     | EngineError::WebPage
                     | EngineError::Http { status: 403 }
             ),
+            status: match &e {
+                EngineError::Http { status } => Some(*status),
+                _ => None,
+            },
             message: e.user_message(),
         }),
         Err(_) => Err(ProbeFailure {
             message: "The server did not answer in time".into(),
             needs_auth: false,
             browser_only: false,
+            status: None,
         }),
     }
 }

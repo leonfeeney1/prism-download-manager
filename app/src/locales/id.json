@@ -1114,4 +1114,33 @@
   "Write it in plain English, for example: download all PDFs from example.com. Nothing starts until you check the rules below.": "Write it in plain English, for example: download all PDFs from example.com. Nothing starts until you check the rules below.",
   "Parse": "Parse",
   "Use these rules": "Use these rules"
+,
+  "Checked {count} links": {
+    "one": "{count} tautan diperiksa",
+    "other": "{count} tautan diperiksa"
+  },
+  "{count} dead links": {
+    "one": "{count} tautan mati",
+    "other": "{count} tautan mati"
+  }
+,
+  "Dead link — this address no longer works": "Tautan mati — alamat ini sudah tidak berfungsi",
+  "Dead link": "Tautan mati",
+  "Check selected links": "Periksa tautan yang dipilih",
+  "Check links": "Periksa tautan",
+  "Could not check links": "Tidak dapat memeriksa tautan",
+  "Nothing to check": "Tidak ada yang perlu diperiksa",
+  "No queued downloads to check.": "Tidak ada unduhan antrean untuk diperiksa.",
+  "All links are alive.": "Semua tautan masih aktif.",
+  "Check link": "Periksa tautan",
+  "Could not check link": "Tidak dapat memeriksa tautan",
+  "Link is alive": "Tautan masih aktif",
+  "Could not tell": "Tidak dapat dipastikan",
+  "Remote control": "Kendali jarak jauh",
+  "Open this address on your phone to pause, resume and add downloads.": "Buka alamat ini di ponsel Anda untuk menjeda, melanjutkan, dan menambah unduhan.",
+  "Copied": "Disalin",
+  "Remote token": "Token kendali jarak jauh",
+  "Type this into the remote control page on your phone, once.": "Ketikkan sekali di halaman kendali jarak jauh di ponsel Anda.",
+  "Could not start the stream": "Tidak dapat memulai streaming",
+  "Stream": "Streaming"
 }

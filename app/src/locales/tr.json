@@ -1137,4 +1137,33 @@
   "Write it in plain English, for example: download all PDFs from example.com. Nothing starts until you check the rules below.": "Write it in plain English, for example: download all PDFs from example.com. Nothing starts until you check the rules below.",
   "Parse": "Parse",
   "Use these rules": "Use these rules"
+,
+  "Checked {count} links": {
+    "one": "{count} bağlantı denetlendi",
+    "other": "{count} bağlantı denetlendi"
+  },
+  "{count} dead links": {
+    "one": "{count} ölü bağlantı",
+    "other": "{count} ölü bağlantı"
+  }
+,
+  "Dead link — this address no longer works": "Ölü bağlantı — bu adres artık çalışmıyor",
+  "Dead link": "Ölü bağlantı",
+  "Check selected links": "Seçili bağlantıları denetle",
+  "Check links": "Bağlantıları denetle",
+  "Could not check links": "Bağlantılar denetlenemedi",
+  "Nothing to check": "Denetlenecek bir şey yok",
+  "No queued downloads to check.": "Denetlenecek kuyrukta indirme yok.",
+  "All links are alive.": "Tüm bağlantılar çalışıyor.",
+  "Check link": "Bağlantıyı denetle",
+  "Could not check link": "Bağlantı denetlenemedi",
+  "Link is alive": "Bağlantı çalışıyor",
+  "Could not tell": "Belirlenemedi",
+  "Remote control": "Uzaktan kumanda",
+  "Open this address on your phone to pause, resume and add downloads.": "İndirmeleri duraklatmak, sürdürmek ve eklemek için bu adresi telefonunuzda açın.",
+  "Copied": "Kopyalandı",
+  "Remote token": "Uzaktan kumanda belirteci",
+  "Type this into the remote control page on your phone, once.": "Telefonunuzdaki uzaktan kumanda sayfasına bir kez yazın.",
+  "Could not start the stream": "Akış başlatılamadı",
+  "Stream": "Yayınla"
 }

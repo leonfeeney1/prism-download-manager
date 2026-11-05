@@ -123,6 +123,38 @@ impl Status {
     }
 }
 
+/// Outcome of the last dead-link check (`None` on the item = never checked).
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum LinkStatus {
+    /// The link answered and the file is there.
+    Ok,
+    /// The link is gone for Prism: 403/404/410, or a bot check that only a
+    /// browser passes.
+    Dead,
+    /// Checked but inconclusive (timeout, server error, needs sign-in).
+    #[default]
+    Unknown,
+}
+
+impl LinkStatus {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            LinkStatus::Ok => "ok",
+            LinkStatus::Dead => "dead",
+            LinkStatus::Unknown => "unknown",
+        }
+    }
+
+    pub fn parse(s: &str) -> Self {
+        match s {
+            "ok" => LinkStatus::Ok,
+            "dead" => LinkStatus::Dead,
+            _ => LinkStatus::Unknown,
+        }
+    }
+}
+
 /// One entry of the download list.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[serde(rename_all = "camelCase")]
@@ -169,6 +201,12 @@ pub struct DownloadItem {
     /// Offered on the LAN while LAN sharing is on. Only Completed items are
     /// ever served, and only while this flag is set.
     pub lan_shared: bool,
+    /// Outcome of the last dead-link check; `None` when never checked.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub link_status: Option<LinkStatus>,
+    /// When the link was last checked (ms since epoch).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub link_checked_at: Option<u64>,
     /// Serialized `prism_engine::DownloadRequest` (or video/torrent job spec).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub request: Option<serde_json::Value>,

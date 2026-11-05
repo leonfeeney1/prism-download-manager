@@ -4,8 +4,8 @@ use crate::windows;
 use prism_core::events::{BatchInfo, CaptureInfo, CaptureSource, VideoCapture};
 use prism_core::grabber::GrabberConfig;
 use prism_core::manager::{
-    BatchDecision, Bootstrap, CaptureDecision, Core, ItemDetails, ItemPatch, NewItem, StartMode,
-    VideoDecision,
+    BatchDecision, Bootstrap, CaptureDecision, Core, ItemDetails, ItemPatch, LinkCheck, NewItem,
+    StartMode, VideoDecision,
 };
 use prism_core::model::*;
 use prism_core::settings::Settings;
@@ -427,6 +427,17 @@ pub async fn redownload(core: State<'_, Core>, id: String) -> CmdResult<()> {
     core.redownload(&id).map_err(err)
 }
 
+/// Probe queued links and flag the dead ones. `ids` checks only those items;
+/// `None` checks every queued file download. The outcome is saved on each
+/// item, and the results come back so the UI can summarise them.
+#[tauri::command]
+pub async fn check_links(
+    core: State<'_, Core>,
+    ids: Option<Vec<String>>,
+) -> CmdResult<Vec<LinkCheck>> {
+    Ok(core.check_links(ids).await)
+}
+
 #[tauri::command]
 pub async fn update_item(
     core: State<'_, Core>,
@@ -439,6 +450,18 @@ pub async fn update_item(
 #[tauri::command]
 pub async fn item_details(core: State<'_, Core>, id: String) -> CmdResult<Option<ItemDetails>> {
     Ok(core.item_details(&id))
+}
+
+/// Stream one file of a torrent: returns the loopback address to play it at
+/// (browser or player). The torrent must be running and the file a video or
+/// audio file.
+#[tauri::command]
+pub async fn stream_torrent(
+    core: State<'_, Core>,
+    id: String,
+    file_index: usize,
+) -> CmdResult<String> {
+    core.stream_url(&id, file_index).await.map_err(err)
 }
 
 #[tauri::command]

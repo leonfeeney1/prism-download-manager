@@ -109,5 +109,13 @@
   "Describe what to grab": "Describe what to grab",
   "Write it in plain English, for example: download all PDFs from example.com. Nothing starts until you check the rules below.": "Write it in plain English, for example: download all PDFs from example.com. Nothing starts until you check the rules below.",
   "Parse": "Parse",
-  "Use these rules": "Use these rules"
+  "Use these rules": "Use these rules",
+  "Checked {count} links": {
+    "one": "Checked {count} link",
+    "other": "Checked {count} links"
+  },
+  "{count} dead links": {
+    "one": "{count} dead link",
+    "other": "{count} dead links"
+  }
 }

@@ -1161,4 +1161,33 @@
   "Write it in plain English, for example: download all PDFs from example.com. Nothing starts until you check the rules below.": "Write it in plain English, for example: download all PDFs from example.com. Nothing starts until you check the rules below.",
   "Parse": "Parse",
   "Use these rules": "Use these rules"
+,
+  "Checked {count} links": {
+    "one": "{count} lien vérifié",
+    "other": "{count} liens vérifiés"
+  },
+  "{count} dead links": {
+    "one": "{count} lien mort",
+    "other": "{count} liens morts"
+  }
+,
+  "Dead link — this address no longer works": "Lien mort — cette adresse ne fonctionne plus",
+  "Dead link": "Lien mort",
+  "Check selected links": "Vérifier les liens sélectionnés",
+  "Check links": "Vérifier les liens",
+  "Could not check links": "Impossible de vérifier les liens",
+  "Nothing to check": "Rien à vérifier",
+  "No queued downloads to check.": "Aucun téléchargement en attente à vérifier.",
+  "All links are alive.": "Tous les liens fonctionnent.",
+  "Check link": "Vérifier le lien",
+  "Could not check link": "Impossible de vérifier le lien",
+  "Link is alive": "Le lien fonctionne",
+  "Could not tell": "Impossible à déterminer",
+  "Remote control": "Télécommande",
+  "Open this address on your phone to pause, resume and add downloads.": "Ouvrez cette adresse sur votre téléphone pour mettre en pause, reprendre et ajouter des téléchargements.",
+  "Copied": "Copié",
+  "Remote token": "Jeton de télécommande",
+  "Type this into the remote control page on your phone, once.": "Saisissez-le une fois sur la page de télécommande de votre téléphone.",
+  "Could not start the stream": "Impossible de démarrer le flux",
+  "Stream": "Diffuser"
 }

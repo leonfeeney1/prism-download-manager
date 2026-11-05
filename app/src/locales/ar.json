@@ -1234,4 +1234,33 @@
   "Write it in plain English, for example: download all PDFs from example.com. Nothing starts until you check the rules below.": "Write it in plain English, for example: download all PDFs from example.com. Nothing starts until you check the rules below.",
   "Parse": "Parse",
   "Use these rules": "Use these rules"
+,
+  "Checked {count} links": {
+    "one": "تم فحص {count} رابط",
+    "other": "تم فحص {count} روابط"
+  },
+  "{count} dead links": {
+    "one": "{count} رابط ميت",
+    "other": "{count} روابط ميتة"
+  }
+,
+  "Dead link — this address no longer works": "رابط ميت — هذا العنوان لم يعد يعمل",
+  "Dead link": "رابط ميت",
+  "Check selected links": "تحقق من الروابط المحددة",
+  "Check links": "تحقق من الروابط",
+  "Could not check links": "تعذّر التحقق من الروابط",
+  "Nothing to check": "لا شيء للتحقق منه",
+  "No queued downloads to check.": "لا توجد تنزيلات في الانتظار للتحقق منها.",
+  "All links are alive.": "جميع الروابط تعمل.",
+  "Check link": "تحقق من الرابط",
+  "Could not check link": "تعذّر التحقق من الرابط",
+  "Link is alive": "الرابط يعمل",
+  "Could not tell": "تعذّر التحديد",
+  "Remote control": "التحكم عن بُعد",
+  "Open this address on your phone to pause, resume and add downloads.": "افتح هذا العنوان على هاتفك لإيقاف التنزيلات مؤقتًا واستئنافها وإضافتها.",
+  "Copied": "تم النسخ",
+  "Remote token": "رمز التحكم عن بُعد",
+  "Type this into the remote control page on your phone, once.": "اكتبه مرة واحدة في صفحة التحكم عن بُعد على هاتفك.",
+  "Could not start the stream": "تعذّر بدء البث",
+  "Stream": "بث"
 }

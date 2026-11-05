@@ -7,12 +7,13 @@
 //! so in-progress `.part` files, settings and the database can never leak out.
 //! Stopping is a drop: taking the server out of the manager shuts it down.
 
+use axum::Json;
 use axum::body::Body;
 use axum::extract::{Path, State};
 use axum::http::header::{self, HeaderMap};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use axum::routing::get;
+use axum::routing::{get, post};
 use axum::Router;
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
@@ -47,6 +48,32 @@ pub struct LanStatus {
     pub address: Option<String>,
     pub port: u16,
     pub shared_count: usize,
+    /// Address of the phone remote control page, when the server is running.
+    pub remote_url: Option<String>,
+}
+
+/// One download, as the phone remote control sees it.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct RemoteItem {
+    pub id: String,
+    pub name: String,
+    pub status: String,
+    pub size: Option<u64>,
+    pub downloaded: u64,
+}
+
+/// What the phone remote control may do. Implemented by the manager; the
+/// LAN server only ever talks to the app through this trait, never the disk.
+pub trait RemoteControl: Send + Sync + 'static {
+    fn remote_items(&self) -> Vec<RemoteItem>;
+    /// Pause a download; `false` when the id is unknown.
+    fn remote_pause(&self, id: &str) -> bool;
+    /// Resume (start) a download; `false` when the id is unknown.
+    fn remote_resume(&self, id: &str) -> bool;
+    /// Add a download from an address; the new item id, or `None` when the
+    /// address isn't one Prism can download.
+    fn remote_add(&self, url: &str) -> Option<String>;
 }
 
 pub struct LanServer {
@@ -54,18 +81,41 @@ pub struct LanServer {
     shutdown: Option<tokio::sync::oneshot::Sender<()>>,
 }
 
+/// Everything the server's handlers share.
+struct ServerState {
+    source: Arc<dyn LanSource>,
+    control: Arc<dyn RemoteControl>,
+    token: String,
+}
+
 impl LanServer {
     /// Bind `addr` and start serving. Returns once the socket is bound.
+    ///
+    /// `control` is what the phone remote control (`/remote` and `/api/*`)
+    /// talks to; `token` is its bearer token (empty means the API stays
+    /// locked: every `/api/*` call answers 401).
     pub async fn start(
         source: Arc<dyn LanSource>,
+        control: Arc<dyn RemoteControl>,
+        token: String,
         addr: SocketAddr,
     ) -> std::io::Result<Self> {
         let listener = tokio::net::TcpListener::bind(addr).await?;
         let bound = listener.local_addr()?;
+        let state = Arc::new(ServerState {
+            source,
+            control,
+            token,
+        });
         let app = Router::new()
             .route("/", get(index))
             .route("/files/{id}", get(file))
-            .with_state(source);
+            .route("/remote", get(remote_page))
+            .route("/api/status", get(api_status))
+            .route("/api/items", get(api_items).post(api_add))
+            .route("/api/items/{id}/pause", post(api_pause))
+            .route("/api/items/{id}/resume", post(api_resume))
+            .with_state(state);
         let (tx, rx) = tokio::sync::oneshot::channel::<()>();
         tokio::spawn(async move {
             let server = axum::serve(listener, app).with_graceful_shutdown(async {
@@ -134,8 +184,8 @@ fn human_size(size: u64) -> String {
     }
 }
 
-async fn index(State(source): State<Arc<dyn LanSource>>) -> Response {
-    let files = source.shared_files();
+async fn index(State(state): State<Arc<ServerState>>) -> Response {
+    let files = state.source.shared_files();
     let mut rows = String::new();
     for f in &files {
         rows.push_str(&format!(
@@ -151,13 +201,14 @@ async fn index(State(source): State<Arc<dyn LanSource>>) -> Response {
     let body = format!(
         "<!doctype html><html><head><meta charset=\"utf-8\"><title>Shared downloads</title></head>\
         <body><h1>Shared downloads</h1><ul>{rows}</ul>\
-        <p>Files shared from Prism on this local network.</p></body></html>"
+        <p>Files shared from Prism on this local network.</p>\
+        <p><a href=\"/remote\">Remote control</a> — pause, resume and add downloads from your phone.</p></body></html>"
     );
     (StatusCode::OK, [(header::CONTENT_TYPE, "text/html; charset=utf-8")], body).into_response()
 }
 
 /// Parse a single `Range: bytes=...` header. Returns (start, end_inclusive).
-fn parse_range(value: &str, len: u64) -> Option<(u64, u64)> {
+pub(crate) fn parse_range(value: &str, len: u64) -> Option<(u64, u64)> {
     let spec = value.strip_prefix("bytes=")?.trim();
     if spec.contains(',') {
         return None; // multi-range: not supported
@@ -188,11 +239,11 @@ fn parse_range(value: &str, len: u64) -> Option<(u64, u64)> {
 }
 
 async fn file(
-    State(source): State<Arc<dyn LanSource>>,
+    State(state): State<Arc<ServerState>>,
     Path(id): Path<String>,
     headers: HeaderMap,
 ) -> Response {
-    let Some(shared) = source.shared_files().into_iter().find(|f| f.id == id) else {
+    let Some(shared) = state.source.shared_files().into_iter().find(|f| f.id == id) else {
         return (StatusCode::NOT_FOUND, "not found").into_response();
     };
     let Ok(mut f) = tokio::fs::File::open(&shared.path).await else {
@@ -261,6 +312,244 @@ async fn file(
     (status, resp_headers, Body::from_stream(stream)).into_response()
 }
 
+/// The remote control's bearer token check. An empty configured token locks
+/// the whole API: a token is always generated when LAN sharing is switched
+/// on, so empty here means something went wrong, and failing closed is right.
+fn authorized(state: &ServerState, headers: &HeaderMap) -> bool {
+    if state.token.is_empty() {
+        return false;
+    }
+    let Some(v) = headers
+        .get(header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+    else {
+        return false;
+    };
+    let Some(given) = v.strip_prefix("Bearer ") else {
+        return false;
+    };
+    given == state.token
+}
+
+fn unauthorized() -> Response {
+    (
+        StatusCode::UNAUTHORIZED,
+        Json(serde_json::json!({ "error": "wrong or missing token" })),
+    )
+        .into_response()
+}
+
+async fn api_status(State(state): State<Arc<ServerState>>, headers: HeaderMap) -> Response {
+    if !authorized(&state, &headers) {
+        return unauthorized();
+    }
+    let items = state.control.remote_items();
+    let mut downloading = 0;
+    let mut waiting = 0;
+    let mut completed = 0;
+    let mut failed = 0;
+    for i in &items {
+        match i.status.as_str() {
+            "connecting" | "downloading" | "retrying" | "processing" => downloading += 1,
+            "idle" | "queued" | "paused" => waiting += 1,
+            "completed" => completed += 1,
+            "failed" => failed += 1,
+            _ => {}
+        }
+    }
+    (
+        StatusCode::OK,
+        Json(serde_json::json!({
+            "version": env!("CARGO_PKG_VERSION"),
+            "total": items.len(),
+            "downloading": downloading,
+            "waiting": waiting,
+            "completed": completed,
+            "failed": failed,
+        })),
+    )
+        .into_response()
+}
+
+async fn api_items(State(state): State<Arc<ServerState>>, headers: HeaderMap) -> Response {
+    if !authorized(&state, &headers) {
+        return unauthorized();
+    }
+    (StatusCode::OK, Json(state.control.remote_items())).into_response()
+}
+
+async fn api_pause(
+    State(state): State<Arc<ServerState>>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+) -> Response {
+    if !authorized(&state, &headers) {
+        return unauthorized();
+    }
+    if state.control.remote_pause(&id) {
+        (StatusCode::OK, Json(serde_json::json!({ "ok": true }))).into_response()
+    } else {
+        (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({ "error": "unknown download" })),
+        )
+            .into_response()
+    }
+}
+
+async fn api_resume(
+    State(state): State<Arc<ServerState>>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+) -> Response {
+    if !authorized(&state, &headers) {
+        return unauthorized();
+    }
+    if state.control.remote_resume(&id) {
+        (StatusCode::OK, Json(serde_json::json!({ "ok": true }))).into_response()
+    } else {
+        (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({ "error": "unknown download" })),
+        )
+            .into_response()
+    }
+}
+
+#[derive(Deserialize)]
+struct AddRequest {
+    url: String,
+}
+
+async fn api_add(
+    State(state): State<Arc<ServerState>>,
+    headers: HeaderMap,
+    Json(body): Json<AddRequest>,
+) -> Response {
+    if !authorized(&state, &headers) {
+        return unauthorized();
+    }
+    match state.control.remote_add(body.url.trim()) {
+        Some(id) => (
+            StatusCode::CREATED,
+            Json(serde_json::json!({ "id": id })),
+        )
+            .into_response(),
+        None => (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": "not a downloadable address" })),
+        )
+            .into_response(),
+    }
+}
+
+/// The phone page: one self-contained page (no build step, no external
+/// assets) that lists downloads and lets the phone pause, resume and add
+/// them. The token is asked for once and kept in the phone's local storage.
+const REMOTE_PAGE: &str = r#"<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Prism remote</title>
+<style>
+body { font-family: system-ui, sans-serif; margin: 0 auto; max-width: 640px; padding: 16px; background: #101418; color: #e8ecef; }
+h1 { font-size: 20px; margin: 0 0 4px; }
+.sub { color: #9aa5ad; margin: 0 0 16px; font-size: 14px; }
+form { display: flex; gap: 8px; margin-bottom: 16px; }
+input { flex: 1; padding: 10px; border-radius: 8px; border: 1px solid #333; background: #1a2027; color: inherit; font-size: 15px; }
+button { padding: 10px 14px; border-radius: 8px; border: 0; background: #f0a92e; color: #181203; font-weight: 600; font-size: 15px; }
+button.ghost { background: #232a31; color: #e8ecef; padding: 6px 10px; font-size: 13px; }
+.row { border-top: 1px solid #232a31; padding: 12px 0; }
+.row .nm { font-weight: 600; word-break: break-all; }
+.row .meta { color: #9aa5ad; font-size: 13px; margin: 4px 0 8px; }
+.err { color: #ff8a8a; }
+.muted { color: #9aa5ad; }
+</style></head>
+<body>
+<h1>Prism remote</h1>
+<p class="sub" id="status">Loading…</p>
+<form id="addform"><input id="url" type="url" placeholder="Paste a download link" autocomplete="off"><button type="submit">Add</button></form>
+<div id="list"></div>
+<p><button class="ghost" id="forget">Forget token</button></p>
+<script>
+var token = localStorage.getItem('prism-remote-token') || '';
+function headers() { return { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' }; }
+function askToken() {
+  var t = prompt('Remote token (shown in Prism Settings, under LAN sharing):');
+  if (t) { token = t.trim(); localStorage.setItem('prism-remote-token', token); return true; }
+  return false;
+}
+function pct(it) {
+  if (!it.size) return '';
+  return ' · ' + Math.floor(100 * it.downloaded / it.size) + '%';
+}
+function render(items) {
+  var list = document.getElementById('list');
+  list.innerHTML = '';
+  if (!items.length) { list.innerHTML = '<p class="muted">No downloads yet.</p>'; return; }
+  items.forEach(function (it) {
+    var row = document.createElement('div');
+    row.className = 'row';
+    var nm = document.createElement('div');
+    nm.className = 'nm';
+    nm.textContent = it.name;
+    var meta = document.createElement('div');
+    meta.className = 'meta';
+    meta.textContent = it.status + pct(it);
+    var btn = document.createElement('button');
+    btn.className = 'ghost';
+    var pausable = it.status === 'downloading' || it.status === 'connecting' || it.status === 'queued' || it.status === 'retrying';
+    btn.textContent = pausable ? 'Pause' : 'Resume';
+    btn.onclick = function () { act(it.id, pausable ? 'pause' : 'resume'); };
+    row.appendChild(nm);
+    row.appendChild(meta);
+    row.appendChild(btn);
+    list.appendChild(row);
+  });
+}
+function load() {
+  fetch('/api/items', { headers: headers() }).then(function (r) {
+    if (r.status === 401) { if (askToken()) load(); else document.getElementById('status').textContent = 'Wrong token.'; return null; }
+    return r.json();
+  }).then(function (items) {
+    if (!items) return;
+    document.getElementById('status').textContent = items.length + ' download(s)';
+    render(items);
+  }).catch(function () { document.getElementById('status').textContent = 'Could not reach Prism.'; });
+}
+function act(id, what) {
+  fetch('/api/items/' + encodeURIComponent(id) + '/' + what, { method: 'POST', headers: headers() })
+    .then(function () { load(); });
+}
+document.getElementById('addform').addEventListener('submit', function (e) {
+  e.preventDefault();
+  var url = document.getElementById('url').value.trim();
+  if (!url) return;
+  fetch('/api/items', { method: 'POST', headers: headers(), body: JSON.stringify({ url: url }) })
+    .then(function (r) {
+      if (r.status === 401) { if (askToken()) load(); return; }
+      if (!r.ok) { document.getElementById('status').textContent = 'That address could not be added.'; return; }
+      document.getElementById('url').value = '';
+      load();
+    });
+});
+document.getElementById('forget').addEventListener('click', function () {
+  localStorage.removeItem('prism-remote-token');
+  token = '';
+  load();
+});
+load();
+setInterval(load, 5000);
+</script>
+</body></html>"#;
+
+async fn remote_page() -> Response {
+    (
+        StatusCode::OK,
+        [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
+        REMOTE_PAGE,
+    )
+        .into_response()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -273,9 +562,76 @@ mod tests {
         }
     }
 
+    struct FakeControl {
+        items: std::sync::Mutex<Vec<RemoteItem>>,
+        paused: std::sync::Mutex<Vec<String>>,
+        resumed: std::sync::Mutex<Vec<String>>,
+        added: std::sync::Mutex<Vec<String>>,
+    }
+
+    impl FakeControl {
+        fn with(items: Vec<RemoteItem>) -> Self {
+            Self {
+                items: std::sync::Mutex::new(items),
+                paused: std::sync::Mutex::new(Vec::new()),
+                resumed: std::sync::Mutex::new(Vec::new()),
+                added: std::sync::Mutex::new(Vec::new()),
+            }
+        }
+    }
+
+    impl RemoteControl for FakeControl {
+        fn remote_items(&self) -> Vec<RemoteItem> {
+            self.items.lock().unwrap().clone()
+        }
+
+        fn remote_pause(&self, id: &str) -> bool {
+            let known = self.items.lock().unwrap().iter().any(|i| i.id == id);
+            if known {
+                self.paused.lock().unwrap().push(id.to_string());
+            }
+            known
+        }
+
+        fn remote_resume(&self, id: &str) -> bool {
+            let known = self.items.lock().unwrap().iter().any(|i| i.id == id);
+            if known {
+                self.resumed.lock().unwrap().push(id.to_string());
+            }
+            known
+        }
+
+        fn remote_add(&self, url: &str) -> Option<String> {
+            if !url.contains("://") {
+                return None;
+            }
+            self.added.lock().unwrap().push(url.to_string());
+            let id = "added-1".to_string();
+            self.items.lock().unwrap().push(RemoteItem {
+                id: id.clone(),
+                name: url.to_string(),
+                status: "idle".to_string(),
+                size: None,
+                downloaded: 0,
+            });
+            Some(id)
+        }
+    }
+
+    const TOKEN: &str = "test-token";
+
     async fn serve(files: Vec<SharedFile>) -> (LanServer, reqwest::Client, String) {
+        serve_with(files, Arc::new(FakeControl::with(vec![]))).await
+    }
+
+    async fn serve_with(
+        files: Vec<SharedFile>,
+        control: Arc<FakeControl>,
+    ) -> (LanServer, reqwest::Client, String) {
         let server = LanServer::start(
             Arc::new(Static(files)),
+            control,
+            TOKEN.to_string(),
             SocketAddr::from(([127, 0, 0, 1], 0)),
         )
         .await
@@ -361,5 +717,116 @@ mod tests {
         std::fs::remove_file(&p).unwrap();
         let resp = client.get(format!("{base}/files/g")).send().await.unwrap();
         assert_eq!(resp.status(), 404);
+    }
+
+    #[tokio::test]
+    async fn remote_api_needs_the_token() {
+        let control = Arc::new(FakeControl::with(vec![]));
+        let (_srv, client, base) = serve_with(vec![], control).await;
+        // No token, and a wrong token, are both locked out.
+        let no_token = client
+            .get(format!("{base}/api/status"))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(no_token.status(), 401);
+        let wrong = client
+            .get(format!("{base}/api/status"))
+            .header("authorization", "Bearer nope")
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(wrong.status(), 401);
+        let ok = client
+            .get(format!("{base}/api/status"))
+            .header("authorization", format!("Bearer {TOKEN}"))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(ok.status(), 200);
+    }
+
+    #[tokio::test]
+    async fn remote_api_lists_pauses_resumes_and_adds() {
+        let control = Arc::new(FakeControl::with(vec![RemoteItem {
+            id: "one".into(),
+            name: "file.bin".into(),
+            status: "downloading".into(),
+            size: Some(100),
+            downloaded: 40,
+        }]));
+        let (_srv, client, base) = serve_with(vec![], control.clone()).await;
+        let auth = ("authorization", format!("Bearer {TOKEN}"));
+        let items: Vec<RemoteItem> = client
+            .get(format!("{base}/api/items"))
+            .header(auth.0, auth.1.clone())
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].name, "file.bin");
+        // Pausing an unknown id is a 404, not a silent success.
+        let missing = client
+            .post(format!("{base}/api/items/nope/pause"))
+            .header(auth.0, auth.1.clone())
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(missing.status(), 404);
+        let paused = client
+            .post(format!("{base}/api/items/one/pause"))
+            .header(auth.0, auth.1.clone())
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(paused.status(), 200);
+        assert_eq!(control.paused.lock().unwrap().as_slice(), ["one"]);
+        let resumed = client
+            .post(format!("{base}/api/items/one/resume"))
+            .header(auth.0, auth.1.clone())
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(resumed.status(), 200);
+        assert_eq!(control.resumed.lock().unwrap().as_slice(), ["one"]);
+        // Adding a bad address is a 400; a good one is a 201 with an id.
+        let bad = client
+            .post(format!("{base}/api/items"))
+            .header(auth.0, auth.1.clone())
+            .json(&serde_json::json!({ "url": "not a link" }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(bad.status(), 400);
+        let added: serde_json::Value = client
+            .post(format!("{base}/api/items"))
+            .header(auth.0, auth.1.clone())
+            .json(&serde_json::json!({ "url": "https://example.com/new.bin" }))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(added["id"], "added-1");
+        assert_eq!(
+            control.added.lock().unwrap().as_slice(),
+            ["https://example.com/new.bin"]
+        );
+    }
+
+    #[tokio::test]
+    async fn remote_page_serves_the_phone_page() {
+        let (_srv, client, base) = serve(vec![]).await;
+        // The page itself needs no token (the token is asked for on the page);
+        // the API behind it is what is locked.
+        let resp = client.get(format!("{base}/remote")).send().await.unwrap();
+        assert_eq!(resp.status(), 200);
+        let text = resp.text().await.unwrap();
+        assert!(text.contains("Prism remote"));
+        assert!(text.contains("/api/items"));
     }
 }

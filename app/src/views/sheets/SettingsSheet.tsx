@@ -15,7 +15,7 @@ import { COMPLETE_SOUNDS } from "../../lib/sounds";
 import { playSound, useApp } from "../../lib/store";
 import type { LanStatus, Settings } from "../../lib/types";
 import { attempt, toast, useUi } from "../../lib/ui";
-import { pickFile, pickFolder, pickSavePath } from "../../lib/win";
+import { pickFile, pickFolder, pickSavePath, copyText } from "../../lib/win";
 import { scheduleSummary } from "./SchedulerSheet";
 
 export const SECTIONS: { id: string; label: string; icon: IconName; group?: boolean }[] = [
@@ -93,6 +93,7 @@ const Toggle = ({ title, hint, value, onChange }: { title: string; hint?: string
 
 function LanSharing() {
   const [lan, setLan] = useState<LanStatus | null>(null);
+  const token = useApp((s) => s.settings?.lan.remoteToken ?? "");
   useEffect(() => {
     let live = true;
     void api
@@ -133,6 +134,38 @@ function LanSharing() {
         <Row title={t("LAN address")}>
           <span className="selectable">{lan.address}</span>
         </Row>
+      )}
+      {lan?.running && lan.remoteUrl && (
+        <>
+          <Row
+            title={t("Remote control")}
+            hint={t("Open this address on your phone to pause, resume and add downloads.")}
+          >
+            <span className="selectable">{lan.remoteUrl}</span>
+            <button
+              type="button"
+              className="btn btn--sm"
+              onClick={() => void copyText(lan.remoteUrl!).then((ok) => ok && toast(t("Copied")))}
+            >
+              {t("Copy")}
+            </button>
+          </Row>
+          <Row
+            title={t("Remote token")}
+            hint={t("Type this into the remote control page on your phone, once.")}
+          >
+            <span className="selectable">{token || "—"}</span>
+            {token && (
+              <button
+                type="button"
+                className="btn btn--sm"
+                onClick={() => void copyText(token).then((ok) => ok && toast(t("Copied")))}
+              >
+                {t("Copy")}
+              </button>
+            )}
+          </Row>
+        </>
       )}
     </Group>
   );

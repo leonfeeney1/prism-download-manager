@@ -1114,4 +1114,33 @@
   "Write it in plain English, for example: download all PDFs from example.com. Nothing starts until you check the rules below.": "Write it in plain English, for example: download all PDFs from example.com. Nothing starts until you check the rules below.",
   "Parse": "Parse",
   "Use these rules": "Use these rules"
+,
+  "Checked {count} links": {
+    "one": "已检查 {count} 个链接",
+    "other": "已检查 {count} 个链接"
+  },
+  "{count} dead links": {
+    "one": "{count} 个失效链接",
+    "other": "{count} 个失效链接"
+  }
+,
+  "Dead link — this address no longer works": "失效链接 — 此地址已不再有效",
+  "Dead link": "失效链接",
+  "Check selected links": "检查选中的链接",
+  "Check links": "检查链接",
+  "Could not check links": "无法检查链接",
+  "Nothing to check": "没有可检查的内容",
+  "No queued downloads to check.": "没有排队等待检查的下载。",
+  "All links are alive.": "所有链接均有效。",
+  "Check link": "检查链接",
+  "Could not check link": "无法检查链接",
+  "Link is alive": "链接有效",
+  "Could not tell": "无法确定",
+  "Remote control": "远程控制",
+  "Open this address on your phone to pause, resume and add downloads.": "在手机上打开此地址即可暂停、继续和添加下载。",
+  "Copied": "已复制",
+  "Remote token": "远程控制令牌",
+  "Type this into the remote control page on your phone, once.": "在手机上的远程控制页面中输入一次。",
+  "Could not start the stream": "无法开始播放",
+  "Stream": "播放"
 }

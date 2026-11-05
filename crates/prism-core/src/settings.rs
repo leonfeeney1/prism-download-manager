@@ -386,6 +386,9 @@ impl Default for Grabber {
 pub struct Lan {
     pub enabled: bool,
     pub port: u16,
+    /// Token the phone remote control asks for (`Authorization: Bearer …`).
+    /// Empty until LAN sharing is first switched on, when one is generated.
+    pub remote_token: String,
 }
 
 impl Default for Lan {
@@ -393,6 +396,7 @@ impl Default for Lan {
         Self {
             enabled: false,
             port: 8421,
+            remote_token: String::new(),
         }
     }
 }

@@ -62,6 +62,19 @@ export const isUnfinished = (s: Status) => s !== "completed";
 export const canPause = (s: Status) => ["queued", "connecting", "downloading", "retrying", "processing"].includes(s);
 export const canResume = (s: Status) => ["idle", "paused", "failed"].includes(s);
 
+/** The dead-link checker can probe this item: a queued file download over http(s). */
+export const canCheckLink = (i: DownloadItem) =>
+  !i.trashed &&
+  (i.status === "idle" || i.status === "queued" || i.status === "paused" || i.status === "failed") &&
+  (i.kind === "http" || i.kind === "hls" || i.kind === "dash");
+
+/** Media a torrent file can be streamed while it downloads (matches prism-core stream.rs). */
+const STREAMABLE_EXTS = ["mp4", "m4v", "mkv", "webm", "mov", "avi", "mp3", "flac", "wav"];
+export const isStreamableFile = (path: string) => {
+  const ext = path.split(".").pop()?.toLowerCase() ?? "";
+  return STREAMABLE_EXTS.includes(ext);
+};
+
 /** Done bytes, total and 0..1 fraction (null when the size is unknown). A part of a video being
  *  cut has no size until it's done; its share done comes with the progress instead. */
 export function progressOf(item: DownloadItem, progress?: Progress | null) {
