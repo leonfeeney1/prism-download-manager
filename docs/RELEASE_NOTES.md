@@ -1,10 +1,10 @@
-# Prism 1.5.0 — Fork release: dead-link checker, phone remote, torrent streaming.
+# Prism 1.6.0 — Fork release: headless-browser downloads, download agent, all-networks-at-once.
 
 A fast, open-source download manager for Windows, Linux and macOS, with browser integration
 and video downloads.
 
-## What's new in 1.5.0
+## What's new in 1.6.0
 
-* **Dead-link checker.** A "Check links" button in the toolbar scans the whole list with the existing probe and flags links that 404, 403 or are gone, so a dead queue never wastes a night. Dead links get a "Dead link" chip on the item, and a single link can be checked from its right-click menu. Inconclusive results are never marked dead.
-* **Phone remote control.** The LAN server now serves a small remote API: open the address shown in Settings → LAN sharing on your phone, type the remote token once, and you can pause, resume and add downloads from your phone. The token is generated once and shown in Settings; without it the API answers 401.
-* **Torrent sequential mode.** Open a torrent's details and press Stream on a video or audio file to watch it in your browser while it still downloads — pieces are fetched in playback order instead of waiting for the whole file.
+* **Headless-browser downloads.** When a site only lets a web browser download a file — Cloudflare checks, login walls, fingerprint checks — Prism now retries the download in a real headless Chrome, with the same cookies and address, and takes the file it saves. On by default in Settings → Downloads → Browser downloads; a failed download can also be retried from its right-click menu ("Retry in browser"). A throwaway profile is used every time, so your real browser profile is never touched. Direct file links only: a page that needs a human click still needs the human.
+* **Download agent.** Ask Prism in plain words — "the latest episode of Severance in 1080p" — and it searches, picks the best match, chooses the quality you asked for (or the best one), and starts the download. A pasted video link skips the search; a pasted playlist link downloads its entries. Find it in the toolbar ("Ask Prism"). Local and rule-based: no AI model, no API key.
+* **Use all networks at once.** Settings → Connection → "Use all networks at once" spreads a download's segments across every usable network — Wi-Fi, Ethernet and a hotspot together — instead of one network. An interface that cannot reach the server simply loses its segments to the working ones.
