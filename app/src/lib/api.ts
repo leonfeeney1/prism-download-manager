@@ -4,8 +4,10 @@
 
 import type { MediaFile, MediaJob, MediaRequest, ShrinkPlan, ToolsRequest } from "./media";
 import type {
+  AgentOutcome,
   BatchInfo,
   Bootstrap,
+  BrowserStatus,
   CaptureInfo,
   Category,
   CoreEvent,
@@ -194,6 +196,10 @@ export const api = {
   emptyTrash: () => invoke<void>("empty_trash"),
   removeCompleted: () => invoke<void>("remove_completed"),
   redownload: (id: string) => invoke<void>("redownload", { id }),
+  retryBrowser: (id: string) => invoke<void>("retry_browser", { id }),
+  browserStatus: () => invoke<BrowserStatus>("browser_status"),
+  networkInterfaces: () => invoke<string[]>("network_interfaces"),
+  runAgent: (request: string) => invoke<AgentOutcome>("run_agent", { request }),
   checkLinks: (ids?: string[] | null) =>
     invoke<LinkCheck[]>("check_links", { ids }),
   updateItem: (id: string, patch: ItemPatch) => invoke<DownloadItem>("update_item", { id, patch }),

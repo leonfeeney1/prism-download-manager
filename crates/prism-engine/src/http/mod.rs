@@ -280,6 +280,9 @@ pub(crate) struct Validators {
 /// Per-download HTTP context shared by its fetchers.
 pub(crate) struct HttpCtx {
     pub spec: ClientSpec,
+    /// Local addresses segment workers bind to, round-robin (bonding).
+    /// Empty means "let the OS pick the interface".
+    pub bind_addresses: Vec<std::net::IpAddr>,
     pub method: HttpMethod,
     pub body: Option<String>,
     pub headers: HeaderMap,

@@ -9,7 +9,7 @@ use reqwest::header::{self, HeaderValue};
 use url::Url;
 
 use super::auth::ChallengeAction;
-use super::client::build_client;
+use super::client::{ClientSpec, build_client};
 use super::{
     HttpCtx, SourceRef, Validators, header_string, parse_content_range, parse_unsatisfied_range,
     retry_after, strong_etag,
@@ -82,10 +82,16 @@ pub(crate) struct HttpFactory {
 
 impl FetcherFactory for HttpFactory {
     type Fetcher = HttpFetcher;
-    fn create(&self, _worker: WorkerId) -> HttpFetcher {
-        // Sources are assigned per request (round-robin), not per worker, so the worker
-        // id no longer selects a source.
-        HttpFetcher::new(self.ctx.clone())
+    fn create(&self, worker: WorkerId) -> HttpFetcher {
+        // Bonding: each worker binds to one interface, round-robin, so a
+        // download's segments travel over every network at once. Sources are
+        // still assigned per request, not per worker. A worker whose interface
+        // cannot reach the server fails like any other worker failure, and
+        // the supervisor reassigns its segment.
+        let mut spec = self.ctx.spec.clone();
+        spec.local_address =
+            crate::bind::address_for_worker(&self.ctx.bind_addresses, worker as usize);
+        HttpFetcher::new_with_spec(self.ctx.clone(), spec)
     }
 }
 
@@ -132,7 +138,13 @@ fn status_error(status: u16) -> EngineError {
 
 impl HttpFetcher {
     pub(crate) fn new(ctx: Arc<HttpCtx>) -> Self {
-        let client = build_client(&ctx.spec);
+        Self::new_with_spec(ctx.clone(), ctx.spec.clone())
+    }
+
+    /// A fetcher whose client binds to `spec`'s local address (bonding:
+    /// one worker per interface, round-robin).
+    pub(crate) fn new_with_spec(ctx: Arc<HttpCtx>, spec: ClientSpec) -> Self {
+        let client = build_client(&spec);
         Self {
             ctx,
             client,

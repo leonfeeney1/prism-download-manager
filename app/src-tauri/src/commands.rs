@@ -4,17 +4,25 @@ use crate::windows;
 use prism_core::events::{BatchInfo, CaptureInfo, CaptureSource, VideoCapture};
 use prism_core::grabber::GrabberConfig;
 use prism_core::manager::{
-    BatchDecision, Bootstrap, CaptureDecision, Core, ItemDetails, ItemPatch, LinkCheck, NewItem,
-    StartMode, VideoDecision,
+    AgentOutcome, BatchDecision, Bootstrap, CaptureDecision, Core, ItemDetails, ItemPatch,
+    LinkCheck, NewItem, StartMode, VideoDecision,
 };
 use prism_core::model::*;
 use prism_core::settings::Settings;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use tauri::{AppHandle, Manager, State};
 use tauri_plugin_opener::OpenerExt;
 
 pub(crate) type CmdResult<T> = Result<T, String>;
+
+/// Browser-download availability, for Settings.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BrowserStatus {
+    pub available: bool,
+    pub path: Option<String>,
+}
 
 fn err(e: impl std::fmt::Display) -> String {
     e.to_string()
@@ -425,6 +433,39 @@ pub async fn remove_completed(core: State<'_, Core>) -> CmdResult<()> {
 #[tauri::command]
 pub async fn redownload(core: State<'_, Core>, id: String) -> CmdResult<()> {
     core.redownload(&id).map_err(err)
+}
+
+/// Retry a failed direct download through a headless browser (same file,
+/// same cookies). Fails when no Chrome or Edge is installed.
+#[tauri::command]
+pub async fn retry_browser(core: State<'_, Core>, id: String) -> CmdResult<()> {
+    core.retry_in_browser(&id).map_err(err)
+}
+
+/// Whether browser downloads can run on this machine, and which Chrome
+/// (or Edge) they would use. For Settings, so the user sees the state
+/// before a download ever needs it.
+#[tauri::command]
+pub async fn browser_status(core: State<'_, Core>) -> CmdResult<BrowserStatus> {
+    let path = core.settings().downloads.browser_path.clone();
+    Ok(BrowserStatus {
+        available: prism_core::browser::find_chrome(&path).is_some(),
+        path: prism_core::browser::find_chrome(&path)
+            .map(|p| p.to_string_lossy().into_owned()),
+    })
+}
+
+/// The machine's usable network addresses (Wi-Fi, Ethernet, hotspot) for
+/// the "use all networks at once" setting.
+#[tauri::command]
+pub async fn network_interfaces() -> CmdResult<Vec<String>> {
+    Ok(Core::network_interfaces())
+}
+
+/// Run the download agent: plain words in, a download started.
+#[tauri::command]
+pub async fn run_agent(core: State<'_, Core>, request: String) -> CmdResult<AgentOutcome> {
+    core.run_agent(&request).await.map_err(err)
 }
 
 /// Probe queued links and flag the dead ones. `ids` checks only those items;

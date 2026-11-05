@@ -124,6 +124,16 @@ pub struct PlaylistEntry {
     pub uploader: Option<String>,
 }
 
+/// One video found by search (download agent): enough to show what was picked.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SearchHit {
+    pub title: String,
+    pub url: String,
+    pub duration: Option<f64>,
+    pub channel: Option<String>,
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct VideoInfo {

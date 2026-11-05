@@ -117,5 +117,25 @@
   "{count} dead links": {
     "one": "{count} dead link",
     "other": "{count} dead links"
-  }
+  },
+  "Browser downloads": "Browser downloads",
+  "When a site only lets a web browser download a file, retry it in a real browser.": "When a site only lets a web browser download a file, retry it in a real browser.",
+  "Chrome path": "Chrome path",
+  "Empty = auto-detect Chrome or Edge": "Empty = auto-detect Chrome or Edge",
+  "Chrome found": "Chrome found",
+  "No Chrome or Edge found": "No Chrome or Edge found",
+  "Use all networks at once": "Use all networks at once",
+  "Segments travel over Wi-Fi, Ethernet and a hotspot together instead of one network.": "Segments travel over Wi-Fi, Ethernet and a hotspot together instead of one network.",
+  "Networks": "Networks",
+  "Retry in browser": "Retry in browser",
+  "Could not retry in browser": "Could not retry in browser",
+  "Ask Prism": "Ask Prism",
+  "Ask Prism to find and download a video": "Ask Prism to find and download a video",
+  "The latest episode of Severance in 1080p…": "The latest episode of Severance in 1080p…",
+  "Searching…": "Searching…",
+  "Download started": "Download started",
+  "Show download": "Show download",
+  "Could not run the agent": "Could not run the agent",
+  "Plain words: the video, the quality, or a pasted link.": "Plain words: the video, the quality, or a pasted link.",
+  "Browser": "Browser"
 }

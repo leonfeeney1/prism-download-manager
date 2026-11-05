@@ -155,6 +155,7 @@ pub async fn list_variants(
             message: format!("TLS setup failed: {e}"),
         })?,
         pool_max_idle: 1,
+        local_address: None,
     };
     let client = build_client(&spec)?;
     let headers = base_headers(
@@ -677,6 +678,7 @@ async fn run_inner(
             .unwrap_or_else(|| cfg.user_agent.clone()),
         tls: engine.tls().map_err(fail)?,
         pool_max_idle: connections,
+        local_address: None,
     };
     let client = build_client(&spec).map_err(fail)?;
     let headers =

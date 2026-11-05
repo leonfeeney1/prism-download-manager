@@ -36,6 +36,8 @@ pub(crate) struct ClientSpec {
     pub tls: rustls::ClientConfig,
     /// Idle connections kept per host (1 for a segment worker's dedicated client).
     pub pool_max_idle: usize,
+    /// Bind the socket to this local address (bonding); None lets the OS pick.
+    pub local_address: Option<std::net::IpAddr>,
 }
 
 fn proxy_url(
@@ -89,6 +91,9 @@ pub(crate) fn build_client(spec: &ClientSpec) -> Result<reqwest::Client, EngineE
         .redirect(Policy::limited(MAX_REDIRECTS))
         .referer(false)
         .user_agent(spec.user_agent.clone());
+    if let Some(ip) = spec.local_address {
+        b = b.local_address(ip);
+    }
     b = match spec.http {
         HttpPreference::Http1Only => b.http1_only(),
         HttpPreference::Auto => b,
@@ -189,6 +194,7 @@ mod tests {
                     user_agent: "t".into(),
                     tls: tls.clone(),
                     pool_max_idle: 1,
+                    local_address: None,
                 };
                 build_client(&spec).unwrap();
             }

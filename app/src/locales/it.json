@@ -1160,8 +1160,7 @@
   "Describe what to grab": "Describe what to grab",
   "Write it in plain English, for example: download all PDFs from example.com. Nothing starts until you check the rules below.": "Write it in plain English, for example: download all PDFs from example.com. Nothing starts until you check the rules below.",
   "Parse": "Parse",
-  "Use these rules": "Use these rules"
-,
+  "Use these rules": "Use these rules",
   "Checked {count} links": {
     "one": "{count} collegamento controllato",
     "other": "{count} collegamenti controllati"
@@ -1169,8 +1168,7 @@
   "{count} dead links": {
     "one": "{count} collegamento non funzionante",
     "other": "{count} collegamenti non funzionanti"
-  }
-,
+  },
   "Dead link — this address no longer works": "Link non funzionante — questo indirizzo non funziona più",
   "Dead link": "Link non funzionante",
   "Check selected links": "Controlla i link selezionati",
@@ -1189,5 +1187,25 @@
   "Remote token": "Token di controllo remoto",
   "Type this into the remote control page on your phone, once.": "Digitalo una volta nella pagina di controllo remoto sul telefono.",
   "Could not start the stream": "Impossibile avviare lo streaming",
-  "Stream": "Riproduci in streaming"
+  "Stream": "Riproduci in streaming",
+  "Browser downloads": "Download del browser",
+  "When a site only lets a web browser download a file, retry it in a real browser.": "Quando un sito consente il download di un file solo a un browser web, riprova in un browser vero.",
+  "Chrome path": "Percorso di Chrome",
+  "Empty = auto-detect Chrome or Edge": "Vuoto = rileva Chrome o Edge automaticamente",
+  "Chrome found": "Chrome trovato",
+  "No Chrome or Edge found": "Chrome o Edge non trovato",
+  "Use all networks at once": "Usa tutte le reti insieme",
+  "Segments travel over Wi-Fi, Ethernet and a hotspot together instead of one network.": "I segmenti viaggiano su Wi-Fi, Ethernet e hotspot insieme invece che su una sola rete.",
+  "Networks": "Reti",
+  "Retry in browser": "Riprova nel browser",
+  "Could not retry in browser": "Impossibile riprovare nel browser",
+  "Ask Prism": "Chiedi a Prism",
+  "Ask Prism to find and download a video": "Chiedi a Prism di trovare e scaricare un video",
+  "The latest episode of Severance in 1080p…": "L'ultimo episodio di Severance in 1080p…",
+  "Searching…": "Ricerca…",
+  "Download started": "Download avviato",
+  "Show download": "Mostra download",
+  "Could not run the agent": "Impossibile avviare l'agente",
+  "Plain words: the video, the quality, or a pasted link.": "In parole semplici: il video, la qualità o un link incollato.",
+  "Browser": "Browser"
 }

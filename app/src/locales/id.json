@@ -1113,8 +1113,7 @@
   "Describe what to grab": "Describe what to grab",
   "Write it in plain English, for example: download all PDFs from example.com. Nothing starts until you check the rules below.": "Write it in plain English, for example: download all PDFs from example.com. Nothing starts until you check the rules below.",
   "Parse": "Parse",
-  "Use these rules": "Use these rules"
-,
+  "Use these rules": "Use these rules",
   "Checked {count} links": {
     "one": "{count} tautan diperiksa",
     "other": "{count} tautan diperiksa"
@@ -1122,8 +1121,7 @@
   "{count} dead links": {
     "one": "{count} tautan mati",
     "other": "{count} tautan mati"
-  }
-,
+  },
   "Dead link — this address no longer works": "Tautan mati — alamat ini sudah tidak berfungsi",
   "Dead link": "Tautan mati",
   "Check selected links": "Periksa tautan yang dipilih",
@@ -1142,5 +1140,25 @@
   "Remote token": "Token kendali jarak jauh",
   "Type this into the remote control page on your phone, once.": "Ketikkan sekali di halaman kendali jarak jauh di ponsel Anda.",
   "Could not start the stream": "Tidak dapat memulai streaming",
-  "Stream": "Streaming"
+  "Stream": "Streaming",
+  "Browser downloads": "Unduhan browser",
+  "When a site only lets a web browser download a file, retry it in a real browser.": "Saat situs hanya mengizinkan browser web mengunduh file, coba lagi di browser sungguhan.",
+  "Chrome path": "Jalur Chrome",
+  "Empty = auto-detect Chrome or Edge": "Kosong = deteksi Chrome atau Edge otomatis",
+  "Chrome found": "Chrome ditemukan",
+  "No Chrome or Edge found": "Chrome atau Edge tidak ditemukan",
+  "Use all networks at once": "Gunakan semua jaringan sekaligus",
+  "Segments travel over Wi-Fi, Ethernet and a hotspot together instead of one network.": "Segmen berjalan melalui Wi-Fi, Ethernet, dan hotspot bersamaan, bukan satu jaringan.",
+  "Networks": "Jaringan",
+  "Retry in browser": "Coba lagi di browser",
+  "Could not retry in browser": "Tidak dapat mencoba lagi di browser",
+  "Ask Prism": "Tanya Prism",
+  "Ask Prism to find and download a video": "Minta Prism menemukan dan mengunduh video",
+  "The latest episode of Severance in 1080p…": "Episode terbaru Severance dalam 1080p…",
+  "Searching…": "Mencari…",
+  "Download started": "Unduhan dimulai",
+  "Show download": "Tampilkan unduhan",
+  "Could not run the agent": "Tidak dapat menjalankan agen",
+  "Plain words: the video, the quality, or a pasted link.": "Dengan kata sederhana: videonya, kualitasnya, atau tautan yang ditempel.",
+  "Browser": "Browser"
 }

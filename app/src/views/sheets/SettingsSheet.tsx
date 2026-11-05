@@ -13,7 +13,7 @@ import { openUrl, REPO_URL } from "../../lib/links";
 import { categoryIcon, displayName } from "../../lib/present";
 import { COMPLETE_SOUNDS } from "../../lib/sounds";
 import { playSound, useApp } from "../../lib/store";
-import type { LanStatus, Settings } from "../../lib/types";
+import type { BrowserStatus, LanStatus, Settings } from "../../lib/types";
 import { attempt, toast, useUi } from "../../lib/ui";
 import { pickFile, pickFolder, pickSavePath, copyText } from "../../lib/win";
 import { scheduleSummary } from "./SchedulerSheet";
@@ -171,6 +171,90 @@ function LanSharing() {
   );
 }
 
+function BrowserDownloads({ s }: { s: Settings }) {
+  const [status, setStatus] = useState<BrowserStatus | null>(null);
+  useEffect(() => {
+    let live = true;
+    void api
+      .browserStatus()
+      .then((b) => {
+        if (live) setStatus(b);
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, []);
+  return (
+    <Group title={t("Browser downloads")}>
+      <Row
+        title={t("Browser downloads")}
+        hint={t("When a site only lets a web browser download a file, retry it in a real browser.")}
+      >
+        <Select
+          label={t("Browser downloads")}
+          value={s.downloads.browserMode}
+          onChange={(v) => save({ downloads: { browserMode: v } })}
+          options={[
+            { value: "auto", label: t("Automatic") },
+            { value: "off", label: t("Off") },
+          ]}
+          width={200}
+        />
+      </Row>
+      <Row title={t("Chrome path")} hint={t("Empty = auto-detect Chrome or Edge")}>
+        <TextField
+          value={s.downloads.browserPath}
+          onCommit={(v) => save({ downloads: { browserPath: v } })}
+          label={t("Chrome path")}
+          mono
+          placeholder={t("Default")}
+        />
+      </Row>
+      <Row title={t("Browser")}>
+        <span className="selectable">
+          {status == null
+            ? "—"
+            : status.available
+              ? `${t("Chrome found")}${status.path ? ` — ${status.path}` : ""}`
+              : t("No Chrome or Edge found")}
+        </span>
+      </Row>
+    </Group>
+  );
+}
+
+function Bonding({ s }: { s: Settings }) {
+  const [interfaces, setInterfaces] = useState<string[] | null>(null);
+  useEffect(() => {
+    let live = true;
+    void api
+      .networkInterfaces()
+      .then((list) => {
+        if (live) setInterfaces(list);
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, []);
+  return (
+    <>
+      <Toggle
+        title={t("Use all networks at once")}
+        hint={t("Segments travel over Wi-Fi, Ethernet and a hotspot together instead of one network.")}
+        value={s.connection.bondInterfaces}
+        onChange={(v) => save({ connection: { bondInterfaces: v } })}
+      />
+      {s.connection.bondInterfaces && (
+        <Row title={t("Networks")}>
+          <span className="selectable">{interfaces == null ? "—" : interfaces.join(", ") || "—"}</span>
+        </Row>
+      )}
+    </>
+  );
+}
+
 function SectionBody({ id, s }: { id: string; s: Settings }) {
   switch (id) {
     case "general":
@@ -270,6 +354,7 @@ function SectionBody({ id, s }: { id: string; s: Settings }) {
             <Toggle title={t("Start downloads automatically")} value={s.downloads.autoStart} onChange={(v) => save({ downloads: { autoStart: v } })} />
             <Toggle title={t("Verify checksums when known")} value={s.downloads.verifyChecksums} onChange={(v) => save({ downloads: { verifyChecksums: v } })} />
           </Group>
+          <BrowserDownloads s={s} />
         </>
       );
     case "connection":
@@ -300,6 +385,7 @@ function SectionBody({ id, s }: { id: string; s: Settings }) {
           <Row title={t("User agent")} hint={t("Empty = a current Chrome user agent")}>
             <TextField value={s.connection.userAgent} onCommit={(v) => save({ connection: { userAgent: v } })} label={t("User agent")} mono placeholder={t("Default")} />
           </Row>
+          <Bonding s={s} />
         </Group>
       );
     case "lan":

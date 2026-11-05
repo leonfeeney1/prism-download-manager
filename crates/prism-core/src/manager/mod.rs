@@ -6,12 +6,15 @@
 //! back through an outcome channel; a few periodic tasks drive progress events
 //! (250 ms), resume checkpoints (2 s) and queue/schedule evaluation (1 s).
 
+mod agent;
 mod capture;
 mod checks;
 mod grab;
 mod jobs;
 mod peek;
 mod queues;
+
+pub use agent::AgentOutcome;
 
 pub use capture::{
     BatchDecision, CaptureDecision, NewItem, ONE_AT_A_TIME_QUEUE, StartMode, VideoDecision,
@@ -1093,6 +1096,38 @@ impl Core {
         self.start_item(id)
     }
 
+    /// Retry a failed direct download through a headless browser instead of
+    /// the plain engine (same file, same cookies). Only direct downloads
+    /// carry a request the browser can replay.
+    pub fn retry_in_browser(&self, id: &str) -> Result<()> {
+        let item = self.item(id).ok_or_else(|| anyhow!("unknown item"))?;
+        if item.status != Status::Failed {
+            return Err(anyhow!("only a failed download can be retried in the browser"));
+        }
+        if !matches!(
+            item.kind,
+            ItemKind::Http | ItemKind::Hls | ItemKind::Dash
+        ) {
+            return Err(anyhow!("only a direct download can be retried in the browser"));
+        }
+        if crate::browser::find_chrome(&self.settings().downloads.browser_path).is_none() {
+            return Err(anyhow!(
+                "no Chrome or Edge found on this machine — install Chrome to use browser downloads"
+            ));
+        }
+        self.spawn_browser_retry(item);
+        Ok(())
+    }
+
+    /// The machine's usable network addresses (Wi-Fi, Ethernet, hotspot),
+    /// for the "use all networks at once" setting.
+    pub fn network_interfaces() -> Vec<String> {
+        prism_engine::detect_interfaces()
+            .into_iter()
+            .map(|ip| ip.to_string())
+            .collect()
+    }
+
     pub fn item_details(&self, id: &str) -> Option<ItemDetails> {
         let st = self.0.state.lock();
         let item = st.items.get(id)?.clone();
@@ -1288,75 +1323,162 @@ impl Core {
         }
     }
 
+
+    /// Finish an item whose file is on disk: antivirus scan, sounds, events,
+    /// auto-extract. Shared by the engine/video/torrent completion path and
+    /// the headless-browser retry, which produces a file the same way.
+    async fn complete_item(&self, id: &str, path: PathBuf, size: u64) {
+        let file_name = path.file_name().map(|n| n.to_string_lossy().into_owned());
+        self.with_item(id, |i| {
+            i.status = Status::Processing;
+            if let Some(name) = file_name {
+                i.file_name = name;
+            }
+            if let Some(dir) = path.parent() {
+                i.save_dir = dir.to_path_buf();
+            }
+            i.size = Some(size);
+            i.downloaded = size;
+            i.resume = None;
+        });
+        let av = self.settings().antivirus;
+        let scan = crate::antivirus::scan(&av, &path).await;
+        let error = match &scan {
+            crate::antivirus::ScanResult::Infected { detail } => {
+                Some(format!("Antivirus: threat detected\n{detail}"))
+            }
+            _ => None,
+        };
+        let item = self.with_item(id, |i| {
+            i.finished_at = Some(now_ms());
+            if let Some(e) = &error {
+                i.status = Status::Failed;
+                i.error = Some(e.clone());
+            } else {
+                i.status = Status::Completed;
+                i.error = None;
+                // Browser cookies and passwords were only needed to fetch the file.
+                forget_credentials(i);
+                #[cfg(unix)]
+                if i.kind == ItemKind::Video {
+                    // Tools can leave the output executable; a video never should be.
+                    use std::os::unix::fs::PermissionsExt;
+                    let _ = std::fs::set_permissions(
+                        &path,
+                        std::fs::Permissions::from_mode(0o644),
+                    );
+                }
+            }
+            i.clone()
+        });
+        if let Some(item) = item {
+            let s = self.settings();
+            if item.status == Status::Completed {
+                if s.sounds.enabled && s.sounds.on_complete {
+                    self.emit(CoreEvent::PlaySound {
+                        kind: "complete".into(),
+                    });
+                }
+                self.emit(CoreEvent::Completed(item.clone()));
+                // Auto-extract + organize run after completion, in their own
+                // task: extraction of a big archive must not stall the
+                // outcome loop that other finishing jobs wait on.
+                let core = self.clone();
+                tokio::spawn(async move {
+                    core.post_process_completed(item).await;
+                });
+            } else {
+                self.emit(CoreEvent::Failed(item));
+            }
+        }
+    }
+
+    /// Retry one item through a headless browser: the file is fetched by a
+    /// real Chrome (same cookies, same address) and completed through the
+    /// normal path. Runs as its own task; on failure the item fails with the
+    /// browser's error and is not retried again.
+    pub(crate) fn spawn_browser_retry(&self, item: DownloadItem) {
+        let core = self.clone();
+        tokio::spawn(async move {
+            let id = item.id.clone();
+            core.with_item(&id, |i| {
+                i.status = Status::Downloading;
+                i.error = None;
+            });
+            let settings = core.settings();
+            let outcome = core.run_browser_download(&item, &settings).await;
+            match outcome {
+                Ok(done) => core.complete_item(&id, done.path, done.size).await,
+                Err(e) => {
+                    let message = format!("Browser download: {e:#}");
+                    let item = core.with_item(&id, |i| {
+                        i.status = Status::Failed;
+                        i.error = Some(message.clone());
+                        i.clone()
+                    });
+                    if let Some(item) = item {
+                        core.emit(CoreEvent::Failed(item));
+                    }
+                }
+            }
+        });
+    }
+
+    /// Fetch one item's file through headless Chrome. The item's stored
+    /// request (URL, cookies, referer) is what the browser sends.
+    async fn run_browser_download(
+        &self,
+        item: &DownloadItem,
+        settings: &Settings,
+    ) -> Result<crate::browser::BrowserDownload> {
+        let chrome = crate::browser::find_chrome(&settings.downloads.browser_path)
+            .ok_or_else(|| anyhow!("no Chrome or Edge found on this machine"))?;
+        let req: prism_engine::DownloadRequest = item
+            .request
+            .clone()
+            .and_then(|v| serde_json::from_value(v).ok())
+            .ok_or_else(|| anyhow!("this download has no saved request to retry"))?;
+        let url = item
+            .final_url
+            .clone()
+            .filter(|u| !u.is_empty())
+            .unwrap_or_else(|| item.url.clone());
+        let browser_req = crate::browser::BrowserRequest {
+            url,
+            cookies: req.cookies.clone(),
+            referer: req.referer.clone(),
+            dest_dir: item.save_dir.clone(),
+            file_name: item.file_name.clone(),
+        };
+        let core = self.clone();
+        let id = item.id.clone();
+        let size_hint = item.size;
+        crate::browser::download_in_browser(&browser_req, &chrome, |downloaded| {
+            core.with_item(&id, |i| {
+                i.downloaded = downloaded;
+            });
+            core.emit(CoreEvent::Progress(vec![crate::model::Progress {
+                id: id.clone(),
+                status: Status::Downloading,
+                downloaded,
+                size: size_hint,
+                speed: 0,
+                eta_secs: None,
+                connections: 1,
+                detail: Some("Downloading in the browser".to_string()),
+                fraction: None,
+            }]));
+        })
+        .await
+    }
+
     async fn handle_outcome(&self, outcome: JobOutcome) {
         let id = outcome.id.clone();
         self.0.state.lock().jobs.remove(&id);
         platform_keep_awake(self);
         match outcome.result {
             jobs::JobResult::Completed { path, size } => {
-                let file_name = path.file_name().map(|n| n.to_string_lossy().into_owned());
-                self.with_item(&id, |i| {
-                    i.status = Status::Processing;
-                    if let Some(name) = file_name {
-                        i.file_name = name;
-                    }
-                    if let Some(dir) = path.parent() {
-                        i.save_dir = dir.to_path_buf();
-                    }
-                    i.size = Some(size);
-                    i.downloaded = size;
-                    i.resume = None;
-                });
-                let av = self.settings().antivirus;
-                let scan = crate::antivirus::scan(&av, &path).await;
-                let error = match &scan {
-                    crate::antivirus::ScanResult::Infected { detail } => {
-                        Some(format!("Antivirus: threat detected\n{detail}"))
-                    }
-                    _ => None,
-                };
-                let item = self.with_item(&id, |i| {
-                    i.finished_at = Some(now_ms());
-                    if let Some(e) = &error {
-                        i.status = Status::Failed;
-                        i.error = Some(e.clone());
-                    } else {
-                        i.status = Status::Completed;
-                        i.error = None;
-                        // Browser cookies and passwords were only needed to fetch the file.
-                        forget_credentials(i);
-                        #[cfg(unix)]
-                        if i.kind == ItemKind::Video {
-                            // Tools can leave the output executable; a video never should be.
-                            use std::os::unix::fs::PermissionsExt;
-                            let _ = std::fs::set_permissions(
-                                &path,
-                                std::fs::Permissions::from_mode(0o644),
-                            );
-                        }
-                    }
-                    i.clone()
-                });
-                if let Some(item) = item {
-                    let s = self.settings();
-                    if item.status == Status::Completed {
-                        if s.sounds.enabled && s.sounds.on_complete {
-                            self.emit(CoreEvent::PlaySound {
-                                kind: "complete".into(),
-                            });
-                        }
-                        self.emit(CoreEvent::Completed(item.clone()));
-                        // Auto-extract + organize run after completion, in their own
-                        // task: extraction of a big archive must not stall the
-                        // outcome loop that other finishing jobs wait on.
-                        let core = self.clone();
-                        tokio::spawn(async move {
-                            core.post_process_completed(item).await;
-                        });
-                    } else {
-                        self.emit(CoreEvent::Failed(item));
-                    }
-                }
+                self.complete_item(&id, path, size).await;
             }
             jobs::JobResult::Paused { resume } => {
                 self.with_item(&id, |i| {
@@ -1373,7 +1495,21 @@ impl Core {
                 error,
                 resume,
                 resumable,
+                browser_check,
             } => {
+                // A site that only lets a web browser in gets one automatic
+                // retry in a headless browser (Settings > Downloads > Browser
+                // downloads, on by default). The retry task owns the outcome
+                // from here, so the item never flashes Failed.
+                if browser_check
+                    && self.settings().downloads.browser_mode == crate::settings::BrowserMode::Auto
+                    && crate::browser::find_chrome(&self.settings().downloads.browser_path)
+                        .is_some()
+                    && let Some(item) = self.item(&id)
+                {
+                    self.spawn_browser_retry(item);
+                    return;
+                }
                 let item = self.with_item(&id, |i| {
                     i.status = Status::Failed;
                     i.error = Some(error.clone());

@@ -1184,8 +1184,7 @@
   "Describe what to grab": "Describe what to grab",
   "Write it in plain English, for example: download all PDFs from example.com. Nothing starts until you check the rules below.": "Write it in plain English, for example: download all PDFs from example.com. Nothing starts until you check the rules below.",
   "Parse": "Parse",
-  "Use these rules": "Use these rules"
-,
+  "Use these rules": "Use these rules",
   "Checked {count} links": {
     "one": "{count} odkaz zkontrolován",
     "other": "{count} odkazů zkontrolováno"
@@ -1193,8 +1192,7 @@
   "{count} dead links": {
     "one": "{count} nefunkční odkaz",
     "other": "{count} nefunkčních odkazů"
-  }
-,
+  },
   "Dead link — this address no longer works": "Mrtvý odkaz — tato adresa již nefunguje",
   "Dead link": "Mrtvý odkaz",
   "Check selected links": "Zkontrolovat vybrané odkazy",
@@ -1213,5 +1211,25 @@
   "Remote token": "Token dálkového ovládání",
   "Type this into the remote control page on your phone, once.": "Zadejte jej jednou na stránce dálkového ovládání v telefonu.",
   "Could not start the stream": "Stream se nepodařilo spustit",
-  "Stream": "Streamovat"
+  "Stream": "Streamovat",
+  "Browser downloads": "Stahování v prohlížeči",
+  "When a site only lets a web browser download a file, retry it in a real browser.": "Když web povolí stažení souboru jen webovému prohlížeči, zkuste to znovu ve skutečném prohlížeči.",
+  "Chrome path": "Cesta k Chromu",
+  "Empty = auto-detect Chrome or Edge": "Prázdné = automaticky najít Chrome nebo Edge",
+  "Chrome found": "Chrome nalezen",
+  "No Chrome or Edge found": "Chrome ani Edge nenalezeny",
+  "Use all networks at once": "Použít všechny sítě najednou",
+  "Segments travel over Wi-Fi, Ethernet and a hotspot together instead of one network.": "Segmenty putují přes Wi-Fi, Ethernet i hotspot společně místo jediné sítě.",
+  "Networks": "Sítě",
+  "Retry in browser": "Zkusit znovu v prohlížeči",
+  "Could not retry in browser": "V prohlížeči se to nepodařilo zkusit znovu",
+  "Ask Prism": "Zeptat se Prismu",
+  "Ask Prism to find and download a video": "Požádejte Prism, aby našel a stáhl video",
+  "The latest episode of Severance in 1080p…": "Nejnovější díl seriálu Severance v 1080p…",
+  "Searching…": "Hledám…",
+  "Download started": "Stahování zahájeno",
+  "Show download": "Zobrazit stahování",
+  "Could not run the agent": "Agenta se nepodařilo spustit",
+  "Plain words: the video, the quality, or a pasted link.": "Prostými slovy: video, kvalita nebo vložený odkaz.",
+  "Browser": "Prohlížeč"
 }

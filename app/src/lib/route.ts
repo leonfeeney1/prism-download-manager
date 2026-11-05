@@ -6,6 +6,7 @@ import type { ToolsRequest } from "./media";
 export type Route =
   | { name: "main" }
   | { name: "addurl" }
+  | { name: "agent" }
   | { name: "mini" }
   | { name: "dropzone" }
   | { name: "capture"; id: string }
@@ -25,6 +26,7 @@ export function parseRoute(hash: string): Route {
   const arg = decodeURIComponent(rest.join("/"));
   switch (kind) {
     case "addurl":
+    case "agent":
     case "mini":
     case "dropzone":
       return { name: kind };

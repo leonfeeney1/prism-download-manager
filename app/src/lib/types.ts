@@ -89,6 +89,21 @@ export interface LanStatus {
   remoteUrl?: string | null;
 }
 
+/** Browser-download availability, for Settings. */
+export interface BrowserStatus {
+  available: boolean;
+  path?: string | null;
+}
+
+/** What the download agent did. */
+export interface AgentOutcome {
+  itemId: string;
+  title: string;
+  url: string;
+  count: number;
+  candidates: number;
+}
+
 export interface Progress {
   id: string;
   status: Status;
@@ -256,6 +271,10 @@ export interface Settings {
     verifyChecksums: boolean;
     autoStart: boolean;
     autoExtract: boolean;
+    /** What to do when a site only lets a web browser download a file. */
+    browserMode: "off" | "auto";
+    /** Chrome executable for browser downloads; empty means auto-detect. */
+    browserPath: string;
   };
   lan: {
     enabled: boolean;
@@ -269,6 +288,8 @@ export interface Settings {
     readTimeoutSecs: number;
     httpVersion: "http1" | "auto" | "http3";
     maxConnectionsPerHost: number;
+    /** Spread a download's segments across every usable network at once. */
+    bondInterfaces: boolean;
   };
   proxy: {
     mode: "none" | "system" | "http" | "socks5";

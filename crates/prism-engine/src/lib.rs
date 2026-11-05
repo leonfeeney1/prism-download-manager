@@ -24,6 +24,7 @@
 #![warn(missing_docs)]
 
 mod backoff;
+mod bind;
 mod checksum;
 mod config;
 mod engine;
@@ -45,6 +46,7 @@ mod storage;
 mod transfer;
 pub mod util;
 
+pub use bind::detect_interfaces;
 pub use config::EngineConfig;
 pub use engine::Engine;
 pub use error::EngineError;

@@ -4,7 +4,7 @@ import { actions } from "../lib/actions";
 import { api } from "../lib/api";
 import { t } from "../lib/i18n";
 import { GIF_MAX_SECONDS, PRESETS, presetLabel, quickTargets, TARGET_NAMES } from "../lib/media";
-import { canCheckLink, canPause, canResume, displayName } from "../lib/present";
+import { canCheckLink, canPause, canResume, canRetryBrowser, displayName } from "../lib/present";
 import { useApp } from "../lib/store";
 import { mediaPath, openTools, quickConvert } from "../lib/tools";
 import { type MenuEntry, attempt, toast, useUi } from "../lib/ui";
@@ -83,6 +83,7 @@ export function itemMenu(ids: string[]): MenuEntry[] {
     { label: t("Resume"), icon: "resume", disabled: !list.some((i) => canResume(i.status) || i.status === "queued"), onSelect: () => actions.resume(ids) },
     { label: t("Pause"), icon: "pause", kbd: "Space", disabled: !list.some((i) => canPause(i.status)), onSelect: () => actions.pause(ids) },
     { label: t("Redownload"), icon: "retry", disabled: !one, onSelect: () => one && actions.redownload(one.id) },
+    { label: t("Retry in browser"), icon: "browser", disabled: !one || !canRetryBrowser(one), onSelect: () => one && void attempt(api.retryBrowser(one.id), t("Could not retry in browser")) },
     { label: t("Check link"), icon: "link", disabled: !one || !canCheckLink(one), onSelect: () => one && void checkLink(one.id) },
     { label: t("Refresh download address…"), icon: "refresh-url", disabled: !one || done, onSelect: () => one && ui.openDialog({ kind: "refreshUrl", id: one.id }) },
     { label: t("Speed limit…"), icon: "speed-limiter", onSelect: () => ui.openDialog({ kind: "speedLimit", ids }) },

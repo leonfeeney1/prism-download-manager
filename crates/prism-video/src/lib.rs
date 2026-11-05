@@ -331,6 +331,54 @@ impl VideoService {
         }
     }
 
+    /// Search YouTube for `query` and return the top `limit` videos, most
+    /// relevant first. Flat playlist: no per-video extraction, so it is
+    /// fast. Used by the download agent; the picker window never searches.
+    pub async fn search(&self, query: &str, limit: usize) -> Result<Vec<SearchHit>> {
+        let ytdlp = self.require(Tool::YtDlp)?;
+        self.learn_ytdlp_version().await;
+        let opts = self.options();
+        let mut args = probe::global_args(&self.tool_paths(), &opts);
+        args.extend([
+            "-J".into(),
+            "--no-warnings".into(),
+            "--flat-playlist".into(),
+            "--".into(),
+            format!("ytsearch{}:{query}", limit.max(1)),
+        ]);
+        let json = probe::run_probe_json(&ytdlp, args).await?;
+        let found = model::parse_probe_json(&json)?;
+        let entries = match found {
+            Probe::Playlist(info) => info.entries,
+            Probe::Video(info) => vec![PlaylistEntry {
+                id: Some(info.id.clone()),
+                url: info.webpage_url.clone(),
+                title: Some(info.title.clone()),
+                duration: info.duration,
+                thumbnail: info.thumbnail.clone(),
+                uploader: info.uploader.clone(),
+            }],
+        };
+        Ok(entries
+            .into_iter()
+            .filter_map(|e| {
+                let url = if e.url.trim().is_empty() {
+                    e.id.as_deref()
+                        .map(|id| format!("https://www.youtube.com/watch?v={id}"))?
+                } else {
+                    e.url
+                };
+                let title = e.title.filter(|t| !t.trim().is_empty())?;
+                Some(SearchHit {
+                    title,
+                    url,
+                    duration: e.duration,
+                    channel: e.uploader,
+                })
+            })
+            .collect())
+    }
+
     async fn probe_opts(&self, url: &str, ctx: &RequestContext) -> Result<Probe> {
         let opts = self.options();
         match self.probe_with(url, ctx, &opts).await {

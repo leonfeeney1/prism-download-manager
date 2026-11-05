@@ -55,6 +55,7 @@ fn spec(kind: &str) -> Spec {
             ..s(640.0, 600.0, false, true, "Tools")
         },
         "addurl" => s(600.0, 300.0, true, false, "Add URL"),
+        "agent" => s(600.0, 340.0, true, false, "Ask Prism"),
         "mini" => s(360.0, 220.0, true, false, "Prism Mini"),
         "dropzone" => s(112.0, 112.0, true, false, "Prism Drop Zone"),
         _ => s(720.0, 560.0, false, true, "Prism"),

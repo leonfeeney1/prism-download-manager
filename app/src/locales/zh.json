@@ -1113,8 +1113,7 @@
   "Describe what to grab": "Describe what to grab",
   "Write it in plain English, for example: download all PDFs from example.com. Nothing starts until you check the rules below.": "Write it in plain English, for example: download all PDFs from example.com. Nothing starts until you check the rules below.",
   "Parse": "Parse",
-  "Use these rules": "Use these rules"
-,
+  "Use these rules": "Use these rules",
   "Checked {count} links": {
     "one": "已检查 {count} 个链接",
     "other": "已检查 {count} 个链接"
@@ -1122,8 +1121,7 @@
   "{count} dead links": {
     "one": "{count} 个失效链接",
     "other": "{count} 个失效链接"
-  }
-,
+  },
   "Dead link — this address no longer works": "失效链接 — 此地址已不再有效",
   "Dead link": "失效链接",
   "Check selected links": "检查选中的链接",
@@ -1142,5 +1140,25 @@
   "Remote token": "远程控制令牌",
   "Type this into the remote control page on your phone, once.": "在手机上的远程控制页面中输入一次。",
   "Could not start the stream": "无法开始播放",
-  "Stream": "播放"
+  "Stream": "播放",
+  "Browser downloads": "浏览器下载",
+  "When a site only lets a web browser download a file, retry it in a real browser.": "当网站只允许网络浏览器下载文件时，请在真正的浏览器中重试。",
+  "Chrome path": "Chrome 路径",
+  "Empty = auto-detect Chrome or Edge": "留空 = 自动检测 Chrome 或 Edge",
+  "Chrome found": "已找到 Chrome",
+  "No Chrome or Edge found": "未找到 Chrome 或 Edge",
+  "Use all networks at once": "同时使用所有网络",
+  "Segments travel over Wi-Fi, Ethernet and a hotspot together instead of one network.": "分段同时通过 Wi-Fi、以太网和热点传输，而不是只用一个网络。",
+  "Networks": "网络",
+  "Retry in browser": "在浏览器中重试",
+  "Could not retry in browser": "无法在浏览器中重试",
+  "Ask Prism": "问问 Prism",
+  "Ask Prism to find and download a video": "让 Prism 查找并下载视频",
+  "The latest episode of Severance in 1080p…": "《Severance》最新一集，1080p…",
+  "Searching…": "搜索中…",
+  "Download started": "下载已开始",
+  "Show download": "显示下载",
+  "Could not run the agent": "无法运行助手",
+  "Plain words: the video, the quality, or a pasted link.": "用简单的话说：视频、画质或粘贴的链接。",
+  "Browser": "浏览器"
 }

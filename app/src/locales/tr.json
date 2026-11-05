@@ -1136,8 +1136,7 @@
   "Describe what to grab": "Describe what to grab",
   "Write it in plain English, for example: download all PDFs from example.com. Nothing starts until you check the rules below.": "Write it in plain English, for example: download all PDFs from example.com. Nothing starts until you check the rules below.",
   "Parse": "Parse",
-  "Use these rules": "Use these rules"
-,
+  "Use these rules": "Use these rules",
   "Checked {count} links": {
     "one": "{count} bağlantı denetlendi",
     "other": "{count} bağlantı denetlendi"
@@ -1145,8 +1144,7 @@
   "{count} dead links": {
     "one": "{count} ölü bağlantı",
     "other": "{count} ölü bağlantı"
-  }
-,
+  },
   "Dead link — this address no longer works": "Ölü bağlantı — bu adres artık çalışmıyor",
   "Dead link": "Ölü bağlantı",
   "Check selected links": "Seçili bağlantıları denetle",
@@ -1165,5 +1163,25 @@
   "Remote token": "Uzaktan kumanda belirteci",
   "Type this into the remote control page on your phone, once.": "Telefonunuzdaki uzaktan kumanda sayfasına bir kez yazın.",
   "Could not start the stream": "Akış başlatılamadı",
-  "Stream": "Yayınla"
+  "Stream": "Yayınla",
+  "Browser downloads": "Tarayıcı indirmeleri",
+  "When a site only lets a web browser download a file, retry it in a real browser.": "Bir site dosya indirmeyi yalnızca web tarayıcısına izin veriyorsa, gerçek bir tarayıcıda yeniden dene.",
+  "Chrome path": "Chrome yolu",
+  "Empty = auto-detect Chrome or Edge": "Boş = Chrome veya Edge'i otomatik bul",
+  "Chrome found": "Chrome bulundu",
+  "No Chrome or Edge found": "Chrome veya Edge bulunamadı",
+  "Use all networks at once": "Tüm ağları aynı anda kullan",
+  "Segments travel over Wi-Fi, Ethernet and a hotspot together instead of one network.": "Parçalar tek ağ yerine Wi-Fi, Ethernet ve ortak erişim noktası üzerinden birlikte gider.",
+  "Networks": "Ağlar",
+  "Retry in browser": "Tarayıcıda yeniden dene",
+  "Could not retry in browser": "Tarayıcıda yeniden denenemedi",
+  "Ask Prism": "Prism'e sor",
+  "Ask Prism to find and download a video": "Prism'den bir video bulup indirmesini iste",
+  "The latest episode of Severance in 1080p…": "Severance'ın son bölümü 1080p…",
+  "Searching…": "Aranıyor…",
+  "Download started": "İndirme başladı",
+  "Show download": "İndirmeyi göster",
+  "Could not run the agent": "Aracı çalıştırılamadı",
+  "Plain words: the video, the quality, or a pasted link.": "Sade sözlerle: video, kalite veya yapıştırılmış bir bağlantı.",
+  "Browser": "Tarayıcı"
 }

@@ -88,6 +88,7 @@ pub async fn fetch_small(
             message: format!("TLS setup failed: {e}"),
         })?,
         pool_max_idle: 1,
+        local_address: None,
     };
     let client = build_client(&spec)?;
     let headers = base_headers(&req.headers, req.cookies.as_deref(), req.referer.as_deref())?;

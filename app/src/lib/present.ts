@@ -68,6 +68,12 @@ export const canCheckLink = (i: DownloadItem) =>
   (i.status === "idle" || i.status === "queued" || i.status === "paused" || i.status === "failed") &&
   (i.kind === "http" || i.kind === "hls" || i.kind === "dash");
 
+/** A failed direct download can be retried through a headless browser. */
+export const canRetryBrowser = (i: DownloadItem) =>
+  !i.trashed &&
+  i.status === "failed" &&
+  (i.kind === "http" || i.kind === "hls" || i.kind === "dash");
+
 /** Media a torrent file can be streamed while it downloads (matches prism-core stream.rs). */
 const STREAMABLE_EXTS = ["mp4", "m4v", "mkv", "webm", "mov", "avi", "mp3", "flac", "wav"];
 export const isStreamableFile = (path: string) => {

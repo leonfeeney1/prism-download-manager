@@ -45,6 +45,7 @@ export function Toolbar() {
       <IconButton icon="scheduler" label={t("Scheduler")} onClick={() => ui().openSheet({ kind: "scheduler", queueId: queue?.id })} />
       <span className="tb-sep" />
       <IconButton icon="grabber" label={t("Site grabber")} onClick={() => ui().openSheet({ kind: "grabber" })} />
+      <IconButton icon="search" label={t("Ask Prism")} onClick={actions.openAgent} />
       <IconButton icon="batch" label={t("Batch download")} onClick={() => ui().openDialog({ kind: "batch" })} />
       <IconButton
         icon="speed-limiter"

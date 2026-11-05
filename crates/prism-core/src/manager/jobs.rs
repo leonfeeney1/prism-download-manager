@@ -67,6 +67,9 @@ pub(crate) enum JobResult {
         error: String,
         resume: Option<serde_json::Value>,
         resumable: Option<bool>,
+        /// The engine refused with `BrowserCheck`: only a web browser can
+        /// fetch this file. The outcome loop may retry it in a browser.
+        browser_check: bool,
     },
 }
 
@@ -327,6 +330,11 @@ pub(crate) fn engine_config(s: &Settings) -> EngineConfig {
             .then(|| s.connection.max_connections_per_host.min(u16::MAX as u32) as u16),
         ffmpeg_path: (!s.video.ffmpeg_path.trim().is_empty())
             .then(|| PathBuf::from(s.video.ffmpeg_path.trim())),
+        bind_addresses: if s.connection.bond_interfaces {
+            prism_engine::detect_interfaces()
+        } else {
+            Vec::new()
+        },
         ..EngineConfig::default()
     }
 }
@@ -725,6 +733,7 @@ fn spawn_engine(core: &Core, item: &DownloadItem, media: bool) -> Result<Job> {
                 error: e.user_message(),
                 resume: resume(),
                 resumable: matches!(e, EngineError::RangeNotSupported).then_some(false),
+                browser_check: matches!(e, EngineError::BrowserCheck),
             },
         };
         let _ = core3.0.outcomes.send(JobOutcome { id, result });
@@ -793,6 +802,7 @@ impl VideoJob {
                     error: format!("{e:#}"),
                     resume,
                     resumable: None,
+                    browser_check: false,
                 },
             };
             let _ = core.0.outcomes.send(JobOutcome {
@@ -1218,7 +1228,7 @@ impl VideoJob {
 /// Installs yt-dlp and deno on first use, and Prism's own yt-dlp when the system's is too old for
 /// YouTube (#43). Offline, an old yt-dlp still works for other sites, so only a tool that is
 /// still missing is an error.
-async fn prepare_video_tools(core: &Core) -> Result<()> {
+pub(crate) async fn prepare_video_tools(core: &Core) -> Result<()> {
     let video = &core.0.video;
     if !video.needs_tools().await {
         return Ok(());
@@ -1502,6 +1512,7 @@ impl TorrentJob {
                     error: format!("{e:#}"),
                     resume: None,
                     resumable: Some(true),
+                    browser_check: false,
                 },
             };
             let _ = core.0.outcomes.send(JobOutcome {
@@ -1709,7 +1720,7 @@ async fn run_probe_video(
 }
 
 /// The container the user asked for: the video dialog's choice, else Settings › Video.
-fn wanted_container(options: Option<&serde_json::Value>, settings: &Settings) -> Container {
+pub(crate) fn wanted_container(options: Option<&serde_json::Value>, settings: &Settings) -> Container {
     let name = options
         .and_then(|o| o.get("container"))
         .and_then(|v| v.as_str())

@@ -1,5 +1,6 @@
 //! Engine-wide configuration.
 
+use std::net::IpAddr;
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -50,6 +51,9 @@ pub struct EngineConfig {
     pub host_limit_ttl: Duration,
     /// ffmpeg executable for HLS/DASH remuxing (`None` = `ffmpeg` on `PATH`).
     pub ffmpeg_path: Option<PathBuf>,
+    /// Local addresses a download's segments bind to, round-robin, when
+    /// bonding is on. Empty means "let the OS pick the interface".
+    pub bind_addresses: Vec<IpAddr>,
 }
 
 impl Default for EngineConfig {
@@ -72,6 +76,7 @@ impl Default for EngineConfig {
             max_connections_per_host: None,
             host_limit_ttl: Duration::from_secs(24 * 3600),
             ffmpeg_path: None,
+            bind_addresses: Vec::new(),
         }
     }
 }

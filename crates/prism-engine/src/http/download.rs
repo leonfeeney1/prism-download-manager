@@ -64,9 +64,11 @@ pub(crate) fn build_ctx(
             .unwrap_or_else(|| cfg.user_agent.clone()),
         tls: engine.tls()?,
         pool_max_idle: 1,
+        local_address: None,
     };
     Ok(Arc::new(HttpCtx {
         spec,
+        bind_addresses: cfg.bind_addresses.clone(),
         method: req.method,
         body: req.body.clone(),
         headers: base_headers(&req.headers, req.cookies.as_deref(), req.referer.as_deref())?,

@@ -85,6 +85,7 @@ export const actions = {
     return (await attempt(api.addUrl({ url }), t("Could not add the address"))) !== undefined;
   },
   openAddUrl: () => void attempt(api.openWindow("addurl"), t("Could not open Add URL")),
+  openAgent: () => void attempt(api.openWindow("agent"), t("Could not run the agent")),
   toggleLimiter: async () => {
     const on = await attempt(api.toggleSpeedLimiter(), t("Could not toggle the speed limiter"));
     if (on !== undefined) toast(on ? t("Speed limiter on") : t("Speed limiter off"), { ms: 1800 });

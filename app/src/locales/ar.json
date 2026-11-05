@@ -1233,8 +1233,7 @@
   "Describe what to grab": "Describe what to grab",
   "Write it in plain English, for example: download all PDFs from example.com. Nothing starts until you check the rules below.": "Write it in plain English, for example: download all PDFs from example.com. Nothing starts until you check the rules below.",
   "Parse": "Parse",
-  "Use these rules": "Use these rules"
-,
+  "Use these rules": "Use these rules",
   "Checked {count} links": {
     "one": "تم فحص {count} رابط",
     "other": "تم فحص {count} روابط"
@@ -1242,8 +1241,7 @@
   "{count} dead links": {
     "one": "{count} رابط ميت",
     "other": "{count} روابط ميتة"
-  }
-,
+  },
   "Dead link — this address no longer works": "رابط ميت — هذا العنوان لم يعد يعمل",
   "Dead link": "رابط ميت",
   "Check selected links": "تحقق من الروابط المحددة",
@@ -1262,5 +1260,25 @@
   "Remote token": "رمز التحكم عن بُعد",
   "Type this into the remote control page on your phone, once.": "اكتبه مرة واحدة في صفحة التحكم عن بُعد على هاتفك.",
   "Could not start the stream": "تعذّر بدء البث",
-  "Stream": "بث"
+  "Stream": "بث",
+  "Browser downloads": "تنزيلات المتصفح",
+  "When a site only lets a web browser download a file, retry it in a real browser.": "عندما يسمح موقع ما لمتصفح الويب فقط بتنزيل ملف، أعد المحاولة في متصفح حقيقي.",
+  "Chrome path": "مسار Chrome",
+  "Empty = auto-detect Chrome or Edge": "فارغ = اكتشاف Chrome أو Edge تلقائيًا",
+  "Chrome found": "تم العثور على Chrome",
+  "No Chrome or Edge found": "لم يتم العثور على Chrome أو Edge",
+  "Use all networks at once": "استخدام كل الشبكات معًا",
+  "Segments travel over Wi-Fi, Ethernet and a hotspot together instead of one network.": "تنتقل الأجزاء عبر Wi-Fi وEthernet ونقطة اتصال معًا بدلًا من شبكة واحدة.",
+  "Networks": "الشبكات",
+  "Retry in browser": "إعادة المحاولة في المتصفح",
+  "Could not retry in browser": "تعذرت إعادة المحاولة في المتصفح",
+  "Ask Prism": "اسأل Prism",
+  "Ask Prism to find and download a video": "اطلب من Prism العثور على فيديو وتنزيله",
+  "The latest episode of Severance in 1080p…": "أحدث حلقة من Severance بدقة 1080p…",
+  "Searching…": "جارٍ البحث…",
+  "Download started": "بدأ التنزيل",
+  "Show download": "عرض التنزيل",
+  "Could not run the agent": "تعذّر تشغيل الوكيل",
+  "Plain words: the video, the quality, or a pasted link.": "بكلمات بسيطة: الفيديو أو الجودة أو رابط ملصوق.",
+  "Browser": "المتصفح"
 }

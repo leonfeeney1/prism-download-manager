@@ -16,6 +16,7 @@ const CaptureWindow = lazy(() => import("./windows/CaptureWindow"));
 const AddUrlWindow = lazy(() => import("./windows/AddUrlWindow"));
 const BatchWindow = lazy(() => import("./windows/BatchWindow"));
 const VideoWindow = lazy(() => import("./windows/VideoWindow"));
+const AgentWindow = lazy(() => import("./windows/AgentWindow"));
 const TorrentWindow = lazy(() => import("./windows/TorrentWindow"));
 const ToolsWindow = lazy(() => import("./windows/ToolsWindow"));
 const CompleteWindow = lazy(() => import("./windows/CompleteWindow"));
@@ -31,6 +32,8 @@ function View({ route }: { route: Route }) {
       return <CaptureWindow id={route.id} />;
     case "addurl":
       return <AddUrlWindow />;
+    case "agent":
+      return <AgentWindow />;
     case "batch":
       return <BatchWindow id={route.id} />;
     case "video":

@@ -147,6 +147,18 @@ pub enum ConflictAction {
     Overwrite,
 }
 
+/// How a download that only a web browser can fetch is handled.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum BrowserMode {
+    /// Never use the browser: a blocked download just fails.
+    Off,
+    /// When the plain engine is refused, retry the download in a real
+    /// headless browser (same cookies, same address) and take the file it saves.
+    #[default]
+    Auto,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(default, rename_all = "camelCase")]
 pub struct Downloads {
@@ -168,6 +180,10 @@ pub struct Downloads {
     /// inside its category folder when category folders are on; files sitting
     /// loose in the download folder move into their category folder.
     pub auto_extract: bool,
+    /// What to do when a site only lets a web browser download a file.
+    pub browser_mode: BrowserMode,
+    /// Chrome executable for browser downloads; empty means auto-detect.
+    pub browser_path: String,
 }
 
 impl Default for Downloads {
@@ -184,6 +200,8 @@ impl Default for Downloads {
             verify_checksums: true,
             auto_start: true,
             auto_extract: true,
+            browser_mode: BrowserMode::Auto,
+            browser_path: String::new(),
         }
     }
 }
@@ -210,6 +228,9 @@ pub struct Connection {
     pub http_version: HttpVersion,
     /// Upper bound of simultaneous connections to one host across all downloads (0 = unlimited).
     pub max_connections_per_host: u32,
+    /// Spread a download's segments across every usable network at once
+    /// (Wi-Fi, Ethernet, hotspot) instead of one connection's interface.
+    pub bond_interfaces: bool,
 }
 
 impl Default for Connection {
@@ -220,6 +241,7 @@ impl Default for Connection {
             read_timeout_secs: 30,
             http_version: HttpVersion::Http1,
             max_connections_per_host: 0,
+            bond_interfaces: false,
         }
     }
 }
